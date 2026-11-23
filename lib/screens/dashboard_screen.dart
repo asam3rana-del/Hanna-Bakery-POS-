@@ -1,34 +1,36 @@
 import 'package:flutter/material.dart';
-import '../app_info.dart';
-import 'package:flutter/services.dart' show Clipboard, ClipboardData;
+import 'package:flutter/services.dart' show Clipboard, ClipboardData, LogicalKeyboardKey;
+import 'package:intl/intl.dart' show DateFormat, NumberFormat;
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../models/due_followup.dart';
 import '../db/dashboard_repository.dart';
-import '../db/due_followup_repository.dart';
 import '../db/party_dashboard_repository.dart';
+import '../desktop/desktop_prefs.dart';
+import '../desktop/desktop_shell.dart';
 import '../models/misc_entities.dart';
 import '../models/product.dart';
 import '../services/biometric.dart';
 import '../services/crash_handler.dart';
 import '../services/crash_reporter.dart';
-import '../services/permissions.dart';
 import '../services/session.dart';
 import '../sync/settings_sync.dart';
 import '../theme/theme_manager.dart';
 import '../utils/loc.dart';
-import '../widgets/menu_row.dart' show IconBadge;
 import '../widgets/party_quick_add_menu.dart' show showPartyPickerForPayment;
 import '../widgets/role_guard.dart';
-import '../widgets/todays_collection_card.dart';
-import 'amanat_loan_screen.dart';
 import 'backup_export_screen.dart';
+import '../license/license_screen.dart';
+import '../license/license_service.dart';
+import 'bakery_orders_screen.dart';
+import 'production_screen.dart';
+import 'wastage_screen.dart';
+import '../db/bakery_order_repository.dart';
+import '../db/production_repository.dart';
+import '../db/wastage_repository.dart';
+import '../widgets/bakery_premium.dart';
 import 'daily_bills_screen.dart';
 import 'day_book_screen.dart';
-import 'collection_hub_screen.dart';
-import '../db/collection_autopilot_repository.dart';
-import '../services/collection_actions.dart';
 import 'item_search_screen.dart';
 import 'items_screen.dart';
 import 'login_screen.dart';
@@ -36,8 +38,6 @@ import 'party_dashboard_screen.dart';
 import 'party_transaction_screen.dart';
 import 'purchase_screen.dart';
 import 'sale_screen.dart';
-import 'medicine_screen.dart';
-import 'rx_register_screen.dart';
 import 'settings_screen.dart';
 import 'stock_report_screen.dart';
 
@@ -74,15 +74,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   // Kotlin: get/give green & red semantic hain — theme badalne par bhi wahi rehte hain.
   static const _partyGreen = Color(0xFF1B8A4A);
-  static const _partyGreenBg = Color(0xFFEAF3DE);
   static const _partyRed = Color(0xFFD32F4A);
   static const _partyRedBg = Color(0xFFFCEBEB);
 
-  static const _defaultShopName = 'Hanna Pharmacy POS';
+  static const _defaultShopName = 'Hanna Bakery';
 
   AppPalette get _p => ThemeManager.palette;
 
   final _searchCtrl = TextEditingController();
+  final _searchFocus = FocusNode(); // PC: Ctrl+F
   List<Product>? _products; // cache; doosri screen se wapas aane par reset
   List<Product> _matches = const [];
   String _query = '';
@@ -95,8 +95,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   double _toGet = 0;
   double _toGive = 0;
-  int _autopilotTodo = 0; // Wasooli Autopilot: aaj yaad dilana baqi
-  CollectionFocus? _focus; // "Aaj ki Wasooli" card (sirf jin ke paas due_reminders access hai)
+  BakeryOrderCounts _orders = const BakeryOrderCounts(); // aaj / kal ke cake orders
+  List<BakeryOrder> _next = const []; // agle khule orders (Bake Board)
+  DashboardTotals? _today; // aaj ki sale (+ admin ko profit)
+  double _wasteToday = 0; // aaj ka wastage nuqsan (cost)
+  int _bakedToday = 0; // aaj ki production entries
   int _pending = 0;
   String _shopName = '';
   bool _syncing = false;
@@ -105,7 +108,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
   void initState() {
     super.initState();
     _refresh();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkLastCrash());
+    DesktopShell.rootShown.addListener(_onRootShown);
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _checkLastCrash();
+      await _licenseGuard();
+    });
+  }
+
+  /// License / trial dobara check (app din bhar khuli reh sakti hai). Khatam => License screen; 7 din ya kam => yaad dihani.
+  Future<void> _licenseGuard() async {
+    final s = await LicenseService.check();
+    if (!mounted) return;
+    if (!s.allowed) {
+      Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const LicenseScreen(gate: true)), (_) => false);
+      return;
+    }
+    await maybeShowLicenseWarning(context);
   }
 
   /// Kotlin `showCrashDialog`: pichli baar crash hui ho to log dikhao (Share / Copy / Dismiss).
@@ -135,7 +154,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await Share.share(text, subject: 'IBTISAAM POS Crash Log');
+              await Share.share(text, subject: 'Hanna Bakery POS Crash Log');
               await CrashHandler.clearLastCrash();
               if (ctx.mounted) Navigator.of(ctx).pop();
             },
@@ -166,7 +185,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   void dispose() {
+    DesktopShell.rootShown.removeListener(_onRootShown);
     _searchCtrl.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -181,15 +202,27 @@ class _DashboardScreenState extends State<DashboardScreen> {
     ({double toGet, double toGive})? party;
     int? pending;
     String? shop;
-    CollectionFocus? focus;
-    int autopilotTodo = 0;
-    // Wasooli card ka masla baqi dashboard ko na rokay: alag try, error toast nahi.
+    BakeryOrderCounts? orders;
+    List<BakeryOrder>? next;
+    DashboardTotals? today;
+    double? waste;
+    int? baked;
+    // Bakery hisse ka masla baqi dashboard ko na rokay: alag try, error toast nahi.
     try {
-      if (Permissions.can('due_reminders')) focus = await DueFollowUpRepository.instance.todaysFocus();
+      final open = await BakeryOrderRepository.instance.open();
+      orders = countOrders(open, DateTime.now());
+      next = open.take(12).toList();
     } catch (_) {}
     try {
-      if (Permissions.can('due_reminders')) {
-        autopilotTodo = (await CollectionAutopilotRepository.instance.today()).queue.todo.length;
+      today = await repo.todayTotals();
+    } catch (_) {}
+    try {
+      final n = DateTime.now();
+      final from = DateTime(n.year, n.month, n.day);
+      final to = DateTime(n.year, n.month, n.day + 1);
+      if (Session.isAdminOrManager) {
+        waste = (await WastageRepository.instance.between(from, to)).fold<double>(0, (a, r) => a + r.loss);
+        baked = (await ProductionRepository.instance.log(from, to)).length;
       }
     } catch (_) {}
     try {
@@ -215,8 +248,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
       if (pending != null) _pending = pending;
       if (shop != null) _shopName = shop;
-      _focus = focus;
-      _autopilotTodo = autopilotTodo;
+      if (orders != null) _orders = orders;
+      if (next != null) _next = next;
+      if (today != null) _today = today;
+      if (waste != null) _wasteToday = waste;
+      if (baked != null) _bakedToday = baked;
     });
     if (error != null) _toast(error);
   }
@@ -273,6 +309,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   bool get _canSeeSuppliers => _am.contains(Session.role); // cashier ko supplier screen band
+
+  /// PC sidebar se wapas Dashboard par aaye (yahan ka `_push` nahi chala) — numbers dobara padho.
+  void _onRootShown() {
+    if (!mounted) return;
+    _products = null;
+    _parties = null;
+    _refresh();
+    if (_query.isNotEmpty) _onSearch(_searchCtrl.text);
+    _licenseGuard();
+  }
 
   // ------------------------------------------------------------ navigation
 
@@ -466,7 +512,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
             open: () => const RoleGuard(allowed: _admin, child: PurchaseScreen())),
       // Daily Bills (admin/manager) ab seedha dashboard par; Cash in/out dashboard se hata diya
       // (Settings -> Cash & Bank aur Customers & Suppliers se ab bhi khulta hai).
-      if (!AppInfo.pharmacyMode && _am.contains(role))
+      if (_am.contains(role))
         _Action('Daily Bills', 'روزانہ بلز', 'One bill per customer per day', 'ہر کسٹمر کا دن کا ایک بل', Icons.receipt_long_outlined,
             p.flatAmberBg, p.flatAmberFg,
             open: () => const DailyBillsScreen()),
@@ -479,33 +525,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _Action('Payment\nMade', 'ادائیگی\nادا', 'Money paid to a supplier', 'سپلائر کو رقم ادا', Icons.north_east, p.flatCoralBg,
             p.flatCoralFg,
             onTap: () => _quickPayment(forCustomer: false)),
-      if (!AppInfo.pharmacyMode && Permissions.can('due_reminders'))
-        _Action('Collection', 'وصولی', 'Remind today + all pending dues', 'آج کی یاد دہانی اور تمام بقایا', Icons.bolt_rounded,
+      // Bakery: cake / custom orders (advance + delivery date). Badge = aaj ki delivery + der wale.
+      _Action('Cake Orders', 'کیک آرڈرز', 'Bookings, advance & delivery', 'بکنگ، ایڈوانس اور ڈیلیوری', Icons.cake_outlined,
+          p.flatPinkBg, p.flatPinkFg,
+          open: () => const BakeryOrdersScreen(), badge: _orders.dueToday + _orders.late),
+      if (_am.contains(role))
+        _Action('Production', 'پروڈکشن', 'Recipes & daily baking', 'ریسپی اور روزانہ تیاری', Icons.bakery_dining_outlined,
             p.flatAmberBg, p.flatAmberFg,
-            open: () => const CollectionHubScreen(), badge: _autopilotTodo > 0 ? _autopilotTodo : (_focus?.overdueCount ?? 0)),
-      // Receivables (aging) ab Collection ke andar 3rd tab ("Aging") — wasooli sab ek page par.
+            open: () => const ProductionScreen()),
+      if (_am.contains(role))
+        _Action('Wastage', 'ویسٹیج', 'Stale / damaged goods & loss', 'باسی / خراب مال اور نقصان', Icons.delete_sweep_outlined,
+            _partyRedBg, _partyRed,
+            open: () => const WastageScreen()),
       _Action('Customers &\nSuppliers', 'گاہک اور\nسپلائر', 'Manage ledgers & dues', 'کھاتے اور بقایا', Icons.people_outline, p.flatPinkBg,
           p.flatPinkFg,
           open: () => const PartyDashboardScreen()),
-      // Amanat / Loan: ab Due Reminders se alag, seedha dashboard par (add / edit / delete wahin;
-      // party 'customers' table se hi sync hoti hai, is liye baqi parties ki tarah sab devices par auto-sync).
-      if (!AppInfo.pharmacyMode && _am.contains(role))
-        _Action('Deposit / Loan', 'امانت / قرض', 'Deposits held & loans given', 'رکھوائی امانت اور دیے گئے قرض', Icons.account_balance_wallet_outlined,
-            p.flatAmberBg, p.flatAmberFg,
-            open: () => const AmanatLoanScreen()),
       _Action('Low Stock', 'کم اسٹاک', 'Items needing restock', 'دوبارہ منگوانے والی اشیاء', Icons.warning_amber_rounded, _partyRedBg,
           _partyRed,
           open: () => const StockReportScreen(lowStockOnly: true)),
-      // Hanna Pharmacy POS: batch-wise expiry report + formula / substitute search.
-      _Action('Expiry', 'ایکسپائری', 'Expired & near-expiry', 'ایکسپائر اور قریب', Icons.event_busy_outlined, _partyRedBg, _partyRed,
-          open: () => const MedicineScreen()),
-      _Action('Formula Search', 'فارمولا سرچ', 'Medicine, formula & substitute', 'دوائی، فارمولا اور متبادل', Icons.medication_outlined,
-          p.flatTealBg, p.flatTealFg,
-          open: () => const MedicineScreen(openSearch: true)),
-      if (_am.contains(role))
-        _Action('Rx Register', 'نسخہ رجسٹر', 'Controlled drugs & prescriptions', 'کنٹرولڈ ادویات اور نسخے', Icons.assignment_outlined,
-            p.flatPurpleBg, p.flatPurpleFg,
-            open: () => const RxRegisterScreen()),
       // Kotlin jaisa: Items tile sab roles ko (koi gate nahi). ItemsScreen ke andar cashier ko cost nahi
       // dikhta aur add/edit/delete sirf admin (lib/screens/items_screen.dart, items_repository.dart).
       _Action('Items', 'آئٹمز', 'Products, categories & units', 'پروڈکٹس، کیٹیگریز اور یونٹس', Icons.list_alt, p.flatBlueBg, p.flatBlueFg,
@@ -527,42 +564,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
   Widget build(BuildContext context) {
     final p = _p;
     final mq = MediaQuery.of(context);
+    if (DesktopPrefs.wide(mq.size.width)) return _desktop(p, mq);
     final cols = dashboardColumns(mq.size.width);
     return Scaffold(
       backgroundColor: p.bg,
       body: RefreshIndicator(
+        color: ThemeManager.gold,
         onRefresh: _refresh,
         child: ListView(
-          padding: EdgeInsets.zero,
+          padding: EdgeInsets.fromLTRB(12, mq.padding.top + 10, 12, 28 + mq.padding.bottom),
           children: [
-            _header(p, mq.padding.top),
+            _hero(p, wide: false),
             Padding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 28 + mq.padding.bottom),
+              padding: const EdgeInsets.symmetric(horizontal: 4),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _searchBar(p),
                 if (_query.isNotEmpty) _unifiedResults(p),
-                if (!AppInfo.pharmacyMode && _focus != null) ...[
-                  const SizedBox(height: 18),
-                  TodaysCollectionCard(
-                    focus: _focus!,
-                    onOpen: () => _push(const CollectionHubScreen(initialFilter: FollowUpFilter.focus)),
-                    onOpenFilter: (f) => _push(CollectionHubScreen(initialFilter: f)),
-                    onChanged: _refresh,
-                    onOpenReceivables: () => _push(const CollectionHubScreen(initialTab: 2)),
-                    onReceive: (f) async {
-                      final id = f.party.partyId;
-                      if (id == null) return;
-                      final saved = await receiveFromParty(context, partyId: id, partyName: f.party.partyName, due: f.total);
-                      if (saved) await _refresh();
-                    },
-                  ),
+                if (_next.isNotEmpty) ...[
+                  _bakeBoardTitle(),
+                  _deliveryStrip(p),
                 ],
-                const SizedBox(height: 26),
-                _sectionLabel(p, Loc.t('QUICK ACTIONS', 'فوری کام')),
+                PremiumSection(Loc.t("TODAY'S PERFORMANCE", 'آج کی کارکردگی')),
+                _kpis(p, cols),
+                PremiumSection(Loc.t('BAKERY CONTROL', 'بیکری کنٹرول')),
                 _grid(_quickActions(p), cols, p),
-                const SizedBox(height: 22),
-                _sectionLabel(p, Loc.t('DUES SUMMARY', 'بقایا کا خلاصہ')),
-                _duesRow(),
                 if (_pending > 0) _syncPendingLabel(),
               ]),
             ),
@@ -572,97 +596,54 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _header(AppPalette p, double topInset) {
-    final role = Session.role;
-    final roleLabel = role.isEmpty ? '' : role[0].toUpperCase() + role.substring(1);
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, topInset + 14, 16, 16),
-      decoration: BoxDecoration(
-        color: p.cardWhite,
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(28)),
-        border: Border(bottom: BorderSide(color: p.border)),
-      ),
-      child: Column(children: [
-        Row(children: [
-          // Products & Reports Kotlin mein Settings ke andar hain — gear yahin le jata hai.
-          _circleButton(Icons.settings_outlined, p.flatPurpleBg, p.flatPurpleFg, Loc.t('Settings', 'سیٹنگز'),
-              () => _push(const SettingsScreen())),
-          const SizedBox(width: 10),
-          // Dark mode ab sirf Settings mein; yahan Sync (pending ho to laal dot).
-          _syncButton(p),
-          const SizedBox(width: 10),
-          _circleButton(Icons.swap_horiz, p.flatTealBg, p.flatTealFg, Loc.t('Switch user', 'یوزر تبدیل کریں'), _openQuickSwitch),
-          const Spacer(),
-          Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 40,
-              height: 40,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: p.flatPurpleBg),
-              child: Text('IK', style: TextStyle(color: p.flatPurpleFg, fontWeight: FontWeight.bold, fontSize: 13)),
-            ),
-            const SizedBox(height: 5),
-            Text('$roleLabel ${Loc.t('Panel', 'پینل')}',
-                style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: p.textMuted)),
-          ]),
-        ]),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
-          child: Text(
-            _shopName.isEmpty ? _defaultShopName : _shopName,
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 19.5, fontWeight: FontWeight.bold, color: p.textDark),
-          ),
-        ),
-      ]),
-    );
-  }
+  // ------------------------------------------------------------ PC (Windows) layout
 
-  Widget _circleButton(IconData icon, Color bg, Color fg, String tooltip, VoidCallback onTap) {
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: bg,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(width: 40, height: 40, child: Icon(icon, size: 18, color: fg)),
-        ),
-      ),
-    );
-  }
-
-  Widget _syncButton(AppPalette p) {
-    return Tooltip(
-      message: Loc.t('Sync now', 'ابھی سنک کریں'),
-      child: Material(
-        color: p.flatAmberBg,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: _syncing ? null : _syncNow,
-          child: SizedBox(
-            width: 40,
-            height: 40,
-            child: Stack(alignment: Alignment.center, children: [
-              _syncing
-                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: p.flatAmberFg))
-                  : Icon(Icons.sync, size: 18, color: p.flatAmberFg),
-              if (_pending > 0 && !_syncing)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    width: 9,
-                    height: 9,
-                    decoration: BoxDecoration(
-                      color: _partyRed,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: p.flatAmberBg, width: 1.5),
-                    ),
-                  ),
+  /// PC: upar bara hero (dukaan, search, aaj ke figures, gold CTAs); neeche baayen KPIs + Bakery Control grid,
+  /// daayen Bake Board (agle orders). Data / actions wahi jo phone par — sirf tarteeb alag.
+  Widget _desktop(AppPalette p, MediaQueryData mq) {
+    final w = mq.size.width;
+    final sideW = w >= 1250 ? 380.0 : 330.0;
+    final mainW = w - sideW - 24 * 3;
+    final cols = mainW >= 1000 ? 6 : (mainW >= 820 ? 5 : (mainW >= 620 ? 4 : 3));
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyF, control: true): () => _searchFocus.requestFocus(),
+        const SingleActivator(LogicalKeyboardKey.f5): _onRootShown,
+      },
+      child: Focus(
+        autofocus: true,
+        skipTraversal: true,
+        child: Scaffold(
+          backgroundColor: p.bg,
+          body: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _hero(p, wide: true),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (_query.isNotEmpty) _unifiedResults(p),
+                    PremiumSection(Loc.t("TODAY'S PERFORMANCE", 'آج کی کارکردگی')),
+                    _kpis(p, cols >= 5 ? 3 : 2),
+                    PremiumSection(Loc.t('BAKERY CONTROL', 'بیکری کنٹرول')),
+                    // Text size (Ctrl +) ke saath card bhi lamba — 100% par phone jitna (146).
+                    _grid(_quickActions(p), cols, p, extent: 50 + 96 * mq.textScaler.scale(1)),
+                  ]),
                 ),
+                const SizedBox(width: 24),
+                SizedBox(
+                  width: sideW,
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    _bakeBoardTitle(),
+                    if (_next.isEmpty)
+                      _emptyBoard(p)
+                    else
+                      for (final o in _next.take(8))
+                        Padding(padding: const EdgeInsets.only(bottom: 10), child: _deliveryCard(p, o, width: null)),
+                    if (_pending > 0) _syncPendingLabel(),
+                  ]),
+                ),
+              ]),
             ]),
           ),
         ),
@@ -670,37 +651,348 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  Widget _searchBar(AppPalette p) {
-    return Container(
-      padding: const EdgeInsetsDirectional.fromSTEB(10, 6, 8, 6),
+  // ------------------------------------------------------------ hero
+
+  static final _money = NumberFormat('#,##0');
+  String _rs(double v) => 'Rs ${_money.format(v.round())}';
+
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return Loc.t('Good morning', 'صبح بخیر');
+    if (h < 17) return Loc.t('Good afternoon', 'سلام');
+    return Loc.t('Good evening', 'شام بخیر');
+  }
+
+  /// Executive hero: greeting, dukaan, tareekh, aaj ke 3 figures, gold CTAs aur search.
+  Widget _hero(AppPalette p, {required bool wide}) {
+    final role = Session.role;
+    final roleLabel = role.isEmpty ? '' : role.toUpperCase();
+    final user = (Session.username ?? '').trim();
+    final shop = (_shopName.isEmpty ? _defaultShopName : _shopName).toUpperCase();
+    final date = DateFormat('EEEE, d MMMM yyyy').format(DateTime.now());
+
+    final controls = Row(children: [
+      GlassIconButton(
+          icon: Icons.settings_outlined, tooltip: Loc.t('Settings', 'سیٹنگز'), onTap: () => _push(const SettingsScreen())),
+      const SizedBox(width: 8),
+      GlassIconButton(
+          icon: Icons.sync,
+          tooltip: Loc.t('Sync now', 'ابھی سنک کریں'),
+          onTap: _syncing ? null : _syncNow,
+          busy: _syncing,
+          dot: _pending > 0),
+      const SizedBox(width: 8),
+      GlassIconButton(icon: Icons.swap_horiz, tooltip: Loc.t('Switch user', 'یوزر تبدیل کریں'), onTap: _openQuickSwitch),
+      if (wide) ...[
+        const SizedBox(width: 8),
+        GlassIconButton(icon: Icons.refresh, tooltip: Loc.t('Refresh (F5)', 'ریفریش (F5)'), onTap: _onRootShown),
+      ],
+    ]);
+
+    final roleChip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: ThemeManager.gold.withValues(alpha: 0.6)),
+        color: ThemeManager.gold.withValues(alpha: 0.10),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        const Icon(Icons.workspace_premium, size: 15, color: ThemeManager.gold),
+        const SizedBox(width: 6),
+        Text(roleLabel,
+            style: const TextStyle(color: ThemeManager.gold, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 1.4)),
+      ]),
+    );
+
+    final title = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text('${_greeting()}${user.isEmpty ? '' : ', $user'}',
+          style: const TextStyle(color: ThemeManager.gold, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+      const SizedBox(height: 4),
+      Text(shop,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+              color: ThemeManager.cream, fontSize: wide ? 26 : 22, fontWeight: FontWeight.w900, letterSpacing: 2)),
+      const SizedBox(height: 3),
+      Text('$date   •   ${Loc.t('BAKERY POS', 'بیکری POS')}',
+          style: TextStyle(color: ThemeManager.cream.withValues(alpha: 0.55), fontSize: 12, letterSpacing: 0.4)),
+    ]);
+
+    final dueNow = _orders.late + _orders.dueToday;
+    final figures = Row(children: [
+      Expanded(child: HeroFigure(value: _rs(_today?.sale ?? 0), label: Loc.t("Today's sale", 'آج کی سیل'), accent: true)),
+      Expanded(
+        child: HeroFigure(
+          value: '$dueNow',
+          label: _orders.late > 0
+              ? Loc.t('Orders due (${_orders.late} late)', 'آرڈرز (${_orders.late} لیٹ)')
+              : Loc.t('Orders due today', 'آج کے آرڈرز'),
+        ),
+      ),
+      Expanded(child: HeroFigure(value: _rs(_orders.balanceDue), label: Loc.t('Order balance', 'آرڈر باقی'))),
+    ]);
+
+    final pills = Wrap(spacing: 10, runSpacing: 10, children: [
+      GoldPill(icon: Icons.point_of_sale, label: Loc.t('New Sale', 'نئی سیل'), onTap: () => _push(const SaleScreen())),
+      GoldPill(
+          icon: Icons.cake_outlined,
+          label: Loc.t('Cake Order', 'کیک آرڈر'),
+          onTap: () => _push(const BakeryOrderFormScreen())),
+      if (_am.contains(Session.role))
+        GoldPill(
+            icon: Icons.bakery_dining_outlined,
+            label: Loc.t('Bake', 'تیاری'),
+            outlined: true,
+            onTap: () => _push(const ProductionScreen())),
+      if (_am.contains(Session.role))
+        GoldPill(
+            icon: Icons.delete_sweep_outlined,
+            label: Loc.t('Wastage', 'ویسٹیج'),
+            outlined: true,
+            onTap: () => _push(const WastageScreen())),
+    ]);
+
+    if (wide) {
+      return BakeryHero(
+        padding: const EdgeInsets.fromLTRB(26, 22, 26, 24),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(flex: 5, child: title),
+            const SizedBox(width: 20),
+            Expanded(flex: 5, child: Padding(padding: const EdgeInsets.only(top: 4), child: _searchBar(p, onDark: true))),
+            const SizedBox(width: 16),
+            controls,
+            const SizedBox(width: 12),
+            roleChip,
+          ]),
+          const SizedBox(height: 22),
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Expanded(flex: 5, child: figures),
+            const SizedBox(width: 24),
+            Expanded(flex: 5, child: Align(alignment: AlignmentDirectional.centerEnd, child: pills)),
+          ]),
+        ]),
+      );
+    }
+    return BakeryHero(
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [controls, const Spacer(), roleChip]),
+        const SizedBox(height: 18),
+        title,
+        const SizedBox(height: 18),
+        figures,
+        const SizedBox(height: 18),
+        pills,
+        const SizedBox(height: 16),
+        _searchBar(p, onDark: true),
+      ]),
+    );
+  }
+
+  // ------------------------------------------------------------ bake board (agle orders)
+
+  Widget _bakeBoardTitle() => PremiumSection(
+        Loc.t("TODAY'S BAKE BOARD", 'آج کا بیک بورڈ'),
+        trailing: TextButton(
+          onPressed: () => _push(const BakeryOrdersScreen()),
+          child: Text(Loc.t('All orders', 'سب آرڈرز')),
+        ),
+      );
+
+  Widget _emptyBoard(AppPalette p) => Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+            color: p.cardWhite, borderRadius: BorderRadius.circular(20), border: Border.all(color: p.border)),
+        child: Row(children: [
+          Icon(Icons.cake_outlined, color: p.textMuted),
+          const SizedBox(width: 12),
+          Expanded(child: Text(Loc.t('No open cake orders', 'کوئی کھلا کیک آرڈر نہیں'), style: TextStyle(color: p.textMuted))),
+        ]),
+      );
+
+  Widget _deliveryStrip(AppPalette p) => SizedBox(
+        height: 150,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _next.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          itemBuilder: (_, i) => _deliveryCard(p, _next[i], width: 236),
+        ),
+      );
+
+  /// Ek order: waqt chip (gold), status, customer, item, baqi raqam.
+  Widget _deliveryCard(AppPalette p, BakeryOrder o, {double? width}) {
+    final now = DateTime.now();
+    final t = o.deliveryTime;
+    final today = DateTime(now.year, now.month, now.day);
+    final late = t.isBefore(now);
+    final day = late
+        ? Loc.t('LATE', 'لیٹ')
+        : (t.isBefore(today.add(const Duration(days: 1)))
+            ? Loc.t('TODAY', 'آج')
+            : (t.isBefore(today.add(const Duration(days: 2))) ? Loc.t('TOMORROW', 'کل') : DateFormat('d MMM').format(t)));
+    final ready = o.status == BakeryOrderStatus.ready;
+    final accent = late ? p.red : (ready ? p.flatTealFg : p.teal);
+    return SizedBox(
+      width: width,
+      height: 150,
+      child: Material(
         color: p.cardWhite,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(color: late ? p.red.withValues(alpha: 0.5) : p.border),
+        ),
+        child: InkWell(
+          customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          onTap: () => _push(const BakeryOrdersScreen()),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(color: accent.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(10)),
+                  child: Text('$day  ${DateFormat('h:mm a').format(t)}',
+                      style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
+                ),
+                const Spacer(),
+                Icon(ready ? Icons.check_circle : (o.homeDelivery ? Icons.delivery_dining : Icons.storefront_outlined),
+                    size: 18, color: ready ? p.flatTealFg : p.textMuted),
+              ]),
+              const SizedBox(height: 10),
+              Text(o.customerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: p.textDark)),
+              const SizedBox(height: 2),
+              Text(
+                [o.item, if (o.weight > 0) '${o.weight == o.weight.roundToDouble() ? o.weight.round() : o.weight} ${o.weightUnit}']
+                    .join(' • '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12.5, color: p.textMuted),
+              ),
+              const Spacer(),
+              Row(children: [
+                Text(o.number, style: TextStyle(fontSize: 11, color: p.textMuted, fontWeight: FontWeight.w700)),
+                const Spacer(),
+                Text(
+                  o.balance > 0 ? '${Loc.t('Due', 'باقی')} ${_rs(o.balance)}' : Loc.t('PAID', 'ادا شدہ'),
+                  style: TextStyle(
+                      fontSize: 12.5, fontWeight: FontWeight.w900, color: o.balance > 0 ? p.red : p.flatTealFg),
+                ),
+              ]),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------ KPIs
+
+  Widget _kpis(AppPalette p, int cols) {
+    final tiles = <Widget>[
+      KpiTile(
+        icon: Icons.south_west,
+        label: Loc.t("You'll get", 'آپ کو ملنا ہے'),
+        value: _rs(_toGet),
+        color: p.flatTealFg,
+        soft: p.flatTealBg,
+        onTap: () => _push(const PartyDashboardScreen()),
+      ),
+      KpiTile(
+        icon: Icons.north_east,
+        label: Loc.t("You'll give", 'آپ کو دینا ہے'),
+        value: _rs(_toGive),
+        color: p.red,
+        soft: p.flatCoralBg,
+        onTap: () => _push(const PartyDashboardScreen()),
+      ),
+      KpiTile(
+        icon: Icons.cake_outlined,
+        label: Loc.t('Open cake orders', 'کھلے کیک آرڈرز'),
+        value: '${_orders.open}',
+        hint: Loc.t('${_orders.ready} ready • ${_orders.dueTomorrow} tomorrow', '${_orders.ready} تیار • ${_orders.dueTomorrow} کل'),
+        color: p.flatPinkFg,
+        soft: p.flatPinkBg,
+        onTap: () => _push(const BakeryOrdersScreen()),
+      ),
+      if (_today?.profit != null)
+        KpiTile(
+          icon: Icons.trending_up,
+          label: Loc.t("Today's profit", 'آج کا منافع'),
+          value: _rs(_today!.profit!),
+          hint: Loc.t('Sale − cost of goods', 'سیل − مال کی لاگت'),
+          color: p.flatAmberFg,
+          soft: p.flatAmberBg,
+        ),
+      if (_am.contains(Session.role))
+        KpiTile(
+          icon: Icons.bakery_dining_outlined,
+          label: Loc.t('Baked today', 'آج تیار ہوا'),
+          value: '$_bakedToday',
+          hint: Loc.t('production entries', 'پروڈکشن اندراج'),
+          color: p.flatAmberFg,
+          soft: p.flatAmberBg,
+          onTap: () => _push(const ProductionScreen()),
+        ),
+      if (_am.contains(Session.role))
+        KpiTile(
+          icon: Icons.delete_sweep_outlined,
+          label: Loc.t('Wastage today', 'آج کا ویسٹیج'),
+          value: _rs(_wasteToday),
+          hint: Loc.t('loss at cost', 'لاگت پر نقصان'),
+          color: p.red,
+          soft: p.flatCoralBg,
+          onTap: () => _push(const WastageScreen()),
+        ),
+    ];
+    return LayoutBuilder(builder: (context, c) {
+      final n = cols < 2 ? 2 : (cols > 3 ? 3 : cols);
+      final w = (c.maxWidth - (n - 1) * 12) / n;
+      return Wrap(spacing: 12, runSpacing: 12, children: [for (final t in tiles) SizedBox(width: w, child: t)]);
+    });
+  }
+
+  Widget _searchBar(AppPalette p, {bool onDark = false}) {
+    final fg = onDark ? ThemeManager.cream : p.textDark;
+    final muted = onDark ? ThemeManager.cream.withValues(alpha: 0.5) : p.textMuted;
+    return Container(
+      padding: const EdgeInsetsDirectional.fromSTEB(14, 4, 8, 4),
+      decoration: BoxDecoration(
+        color: onDark ? Colors.white.withValues(alpha: 0.07) : p.cardWhite,
         borderRadius: BorderRadius.circular(30),
-        border: Border.all(color: p.border),
+        border: Border.all(color: onDark ? ThemeManager.gold.withValues(alpha: 0.30) : p.border),
       ),
       child: Row(children: [
-        IconBadge(icon: Icons.search, color: p.flatTealFg, bg: p.flatTealBg, size: 36, iconSize: 16),
-        const SizedBox(width: 12),
+        Icon(Icons.search, size: 20, color: onDark ? ThemeManager.gold : p.teal),
+        const SizedBox(width: 10),
         Expanded(
           child: TextField(
             controller: _searchCtrl,
+            focusNode: _searchFocus,
             onChanged: _onSearch,
             textInputAction: TextInputAction.search,
-            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: p.textDark),
+            cursorColor: ThemeManager.gold,
+            style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w700, color: fg),
             decoration: InputDecoration(
               isDense: true,
               border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              contentPadding: const EdgeInsets.symmetric(vertical: 10),
               hintText: _canSeeSuppliers
                   ? Loc.t('Search item, customer, supplier…', 'آئٹم، کسٹمر، سپلائر سرچ کریں…')
                   : Loc.t('Search item, customer…', 'آئٹم، کسٹمر سرچ کریں…'),
-              hintStyle: TextStyle(color: p.textMuted, fontWeight: FontWeight.bold),
+              hintStyle: TextStyle(color: muted, fontWeight: FontWeight.w600),
             ),
           ),
         ),
         if (_query.isNotEmpty)
           IconButton(
             visualDensity: VisualDensity.compact,
-            icon: Icon(Icons.close, size: 18, color: p.textMuted),
+            icon: Icon(Icons.close, size: 18, color: muted),
             onPressed: () {
               _searchCtrl.clear();
               _onSearch('');
@@ -775,40 +1067,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (i != _matches.length - 1) Divider(height: 1, thickness: 1, indent: 18, endIndent: 18, color: p.border),
       ],
     ]);
-  }
-
-  Widget _sectionLabel(AppPalette p, String text) => Padding(
-        padding: const EdgeInsetsDirectional.only(start: 4, bottom: 14),
-        child: Text(text, style: TextStyle(fontSize: 12.5, letterSpacing: 0.8, fontWeight: FontWeight.bold, color: p.textMuted)),
-      );
-
-  Widget _statCard({
-    required String label,
-    required String value,
-    required Color bg,
-    required Color fg,
-    VoidCallback? onTap,
-  }) {
-    return Material(
-      color: bg,
-      borderRadius: BorderRadius.circular(26),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(26),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: TextStyle(fontSize: 12.5, color: fg)),
-            const SizedBox(height: 6),
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              alignment: AlignmentDirectional.centerStart,
-              child: Text(value, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: fg)),
-            ),
-          ]),
-        ),
-      ),
-    );
   }
 
   void _setPartyFilter(bool customers, bool suppliers) {
@@ -894,31 +1152,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
     );
   }
 
-  /// Kotlin: dono card tap => Party Dashboard.
-  Widget _duesRow() {
-    return Row(children: [
-      Expanded(
-        child: _statCard(
-          label: Loc.t("You'll get", 'آپ کو ملنا ہے'),
-          value: dashboardAmount(_toGet),
-          bg: _partyGreenBg,
-          fg: _partyGreen,
-          onTap: () => _push(const PartyDashboardScreen()),
-        ),
-      ),
-      const SizedBox(width: 18),
-      Expanded(
-        child: _statCard(
-          label: Loc.t("You'll give", 'آپ کو دینا ہے'),
-          value: dashboardAmount(_toGive),
-          bg: _partyRedBg,
-          fg: _partyRed,
-          onTap: () => _push(const PartyDashboardScreen()),
-        ),
-      ),
-    ]);
-  }
-
   /// sync_queue mein na bheji hui rows — tap => Settings (Kotlin: Sync History wahin hai).
   Widget _syncPendingLabel() {
     final msg = syncPendingMessage(_pending, urdu: Loc.isUrdu);
@@ -933,7 +1166,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   /// Kotlin buildQuickActionRows(): har row mein [cols] card (2 / 3 / 4).
-  Widget _grid(List<_Action> actions, int cols, AppPalette p) {
+  Widget _grid(List<_Action> actions, int cols, AppPalette p, {double extent = 146}) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -942,13 +1175,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         crossAxisCount: cols,
         mainAxisSpacing: 12,
         crossAxisSpacing: 12,
-        mainAxisExtent: 146,
+        mainAxisExtent: extent,
       ),
       itemCount: actions.length,
       itemBuilder: (_, i) => _actionCard(actions[i], p),
     );
   }
 
+  /// Bakery Control tile: rang wala icon (gol chokor), naam, chhoti tafseel, gold teer.
   Widget _actionCard(_Action a, AppPalette p) {
     final comingSoon = a.open == null && a.onTap == null;
     return Material(
@@ -958,24 +1192,35 @@ class _DashboardScreenState extends State<DashboardScreen> {
         customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         onTap: () => _run(a),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
-              IconBadge(icon: a.icon, color: a.fg, bg: a.bg, size: 36, iconSize: 18),
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: a.bg,
+                  borderRadius: BorderRadius.circular(13),
+                  border: Border.all(color: a.fg.withValues(alpha: 0.18)),
+                ),
+                child: Icon(a.icon, size: 21, color: a.fg),
+              ),
               const Spacer(),
               if (a.badge > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(color: _partyRed, borderRadius: BorderRadius.circular(10)),
                   child: Text('${a.badge}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white)),
-                ),
+                )
+              else
+                Icon(Icons.arrow_outward, size: 16, color: p.teal.withValues(alpha: 0.8)),
             ]),
-            const SizedBox(height: 12),
+            const Spacer(),
             Text(
-              Loc.t(a.en, a.ur),
+              Loc.t(a.en, a.ur).replaceAll('\n', ' '),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: comingSoon ? p.textMuted : p.textDark),
+              style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: comingSoon ? p.textMuted : p.textDark),
             ),
             const SizedBox(height: 3),
             Text(

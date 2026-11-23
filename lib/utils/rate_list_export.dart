@@ -10,7 +10,7 @@ import '../backup/downloads_copy.dart';
 import '../models/product.dart';
 
 /// Public Downloads ke andar folder (Kotlin: "IBTISAAM Rate Lists").
-const String rateListFolder = 'IBTISAAM Rate Lists';
+const String rateListFolder = 'Hanna Bakery Rate Lists';
 
 /// Pehla column Code (barcode) hai. Shopkeeper Rate sab se aakhir mein (purane column positions na badlein).
 const List<String> rateListHeader = [
@@ -55,7 +55,7 @@ String buildRateListCsv(List<Product> products) {
 /// phir spreadsheet app mein seedha kholta hai; koi app na mile to Share sheet. File lauta deta hai.
 Future<File> exportRateList(List<Product> products, {DateTime? now}) async {
   final stamp = DateFormat('yyyy-MM-dd_HH-mm').format(now ?? DateTime.now());
-  final fileName = 'IBTISAAM_Rate_List_$stamp.csv';
+  final fileName = 'HannaBakery_Rate_List_$stamp.csv';
   final dir = Directory(p.join((await getTemporaryDirectory()).path, rateListFolder));
   if (!await dir.exists()) await dir.create(recursive: true);
   final file = File(p.join(dir.path, fileName));
@@ -65,7 +65,7 @@ Future<File> exportRateList(List<Product> products, {DateTime? now}) async {
 
   final res = await OpenFilex.open(file.path, type: 'text/csv');
   if (res.type != ResultType.done) {
-    await Share.shareXFiles([XFile(file.path)], subject: 'IBTISAAM Rate List');
+    await Share.shareXFiles([XFile(file.path)], subject: 'Hanna Bakery Rate List');
   }
   return file;
 }

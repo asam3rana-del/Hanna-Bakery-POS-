@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../app_info.dart';
 import 'package:intl/intl.dart' show DateFormat;
 
 import '../db/category_unit_repository.dart';
@@ -32,11 +31,6 @@ class _ProductScreenState extends State<ProductScreen> {
   final _nameCtrl = TextEditingController();
   final _categoryCtrl = TextEditingController();
   final _tagCtrl = TextEditingController();
-  // Hanna Pharmacy POS: formula / company / rack
-  final _genericCtrl = TextEditingController();
-  final _companyCtrl = TextEditingController();
-  final _rackCtrl = TextEditingController();
-  bool _controlled = false; // ℞ parchi wali / controlled dawai
   final _costCtrl = TextEditingController();
   final _wholesaleCtrl = TextEditingController();
   final _shopkeeperCtrl = TextEditingController();
@@ -82,9 +76,6 @@ class _ProductScreenState extends State<ProductScreen> {
     _nameCtrl.dispose();
     _categoryCtrl.dispose();
     _tagCtrl.dispose();
-    _genericCtrl.dispose();
-    _companyCtrl.dispose();
-    _rackCtrl.dispose();
     _costCtrl.dispose();
     _wholesaleCtrl.dispose();
     _shopkeeperCtrl.dispose();
@@ -195,10 +186,6 @@ class _ProductScreenState extends State<ProductScreen> {
       _nameCtrl.text = p.name;
       _categoryCtrl.text = p.category;
       _tagCtrl.text = p.searchTag;
-      _genericCtrl.text = p.genericName;
-      _companyCtrl.text = p.company;
-      _rackCtrl.text = p.rackLocation;
-      _controlled = p.controlled;
       _primaryUnit = p.unit.isEmpty ? 'pcs' : p.unit;
       _secondaryUnit = p.secondaryUnit.isEmpty ? 'None' : p.secondaryUnit;
       _secondaryQty = p.secondaryUnitQty;
@@ -273,10 +260,6 @@ class _ProductScreenState extends State<ProductScreen> {
       _nameCtrl.clear();
       _categoryCtrl.clear();
       _tagCtrl.clear();
-      _genericCtrl.clear();
-      _companyCtrl.clear();
-      _rackCtrl.clear();
-      _controlled = false;
       _costCtrl.clear();
       _wholesaleCtrl.clear();
       _shopkeeperCtrl.clear();
@@ -409,10 +392,6 @@ class _ProductScreenState extends State<ProductScreen> {
       name: name,
       category: category,
       searchTag: _tagCtrl.text.trim(),
-      genericName: _genericCtrl.text.trim(),
-      company: _companyCtrl.text.trim(),
-      rackLocation: _rackCtrl.text.trim(),
-      controlled: _controlled,
       cost: costVal,
       salePrice: saleVal,
       wholesalePrice: wholesaleVal,
@@ -768,44 +747,10 @@ class _ProductScreenState extends State<ProductScreen> {
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: ThemeManager.palette.border)),
             ),
           ),
-          // Hanna Pharmacy POS: Formula / Company / Rack (sab optional; formula se search + substitute)
-          const SizedBox(height: 10),
-          _medField(_genericCtrl, 'Formula / Generic (e.g. Paracetamol 500mg)'),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(child: _medField(_companyCtrl, 'Company (e.g. GSK)')),
-              const SizedBox(width: 10),
-              Expanded(child: _medField(_rackCtrl, 'Rack / Shelf (e.g. A3)')),
-            ],
-          ),
-          // Controlled / parchi wali dawai: sale par patient, doctor aur parchi number zaroori.
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            value: _controlled,
-            onChanged: (v) => setState(() => _controlled = v),
-            title: const Text('℞ Controlled / parchi wali dawai'),
-            subtitle: Text('Sale par patient, doctor aur parchi number likhna zaroori',
-                style: TextStyle(fontSize: 12, color: ThemeManager.palette.textMuted)),
-          ),
         ],
       ),
     );
   }
-
-  Widget _medField(TextEditingController c, String hint) => TextField(
-        controller: c,
-        textInputAction: TextInputAction.next,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: TextStyle(color: ThemeManager.palette.textMuted, fontSize: 13),
-          filled: true,
-          fillColor: ThemeManager.palette.fieldFill,
-          isDense: true,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: ThemeManager.palette.border)),
-        ),
-      );
 
   Widget _buildCategoryCard() {
     return PremiumCard(
@@ -895,10 +840,8 @@ class _ProductScreenState extends State<ProductScreen> {
               const SizedBox(height: 12),
               PremiumLabeledField(emoji: '📦', label: Loc.t('Wholesale Sale Rate', 'تھوک فروخت کی قیمت'), accent: ThemeManager.palette.blue, controller: _wholesaleCtrl),
               const SizedBox(height: 12),
-              if (!AppInfo.pharmacyMode) ...[
-                PremiumLabeledField(emoji: '🤝', label: Loc.t('Shopkeeper Rate (lowest margin, optional)', 'دکاندار قیمت (کم ترین مارجن، اختیاری)'), accent: ThemeManager.palette.blue, controller: _shopkeeperCtrl),
-                const SizedBox(height: 12),
-              ],
+              PremiumLabeledField(emoji: '🤝', label: Loc.t('Shopkeeper Rate (lowest margin, optional)', 'دکاندار قیمت (کم ترین مارجن، اختیاری)'), accent: ThemeManager.palette.blue, controller: _shopkeeperCtrl),
+              const SizedBox(height: 12),
               PremiumLabeledField(emoji: '🏪', label: Loc.t('Retail Sale Rate', 'پرچون فروخت کی قیمت'), accent: ThemeManager.palette.teal, controller: _saleCtrl),
               const SizedBox(height: 12),
               PremiumLabeledField(emoji: '🧺', label: Loc.t('Bulk Rate (retail, optional)', 'بلک قیمت (پرچون، اختیاری)'), accent: ThemeManager.palette.blue, controller: _bulkPriceCtrl),

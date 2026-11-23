@@ -1,5 +1,4 @@
 import 'dart:async';
-import '../app_info.dart';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -21,13 +20,9 @@ import '../models/product.dart';
 import '../services/purchase_hold_recall.dart';
 import '../services/session.dart';
 import '../utils/bill_doc.dart';
-import '../utils/bill_scan_match.dart';
-import '../utils/bill_scan_parser.dart' show ScannedItem;
-import 'bill_scan_screen.dart';
 import 'bill_preview_screen.dart';
 import '../utils/input_validation.dart';
 import '../utils/loc.dart';
-import '../utils/medical_expiry.dart';
 import '../utils/purchase_calc.dart';
 import '../utils/split_payment.dart';
 import '../widgets/autocomplete_options.dart';
@@ -87,11 +82,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
   final _wholesaleCtrl = TextEditingController();
   final _shopkeeperCtrl = TextEditingController();
   final _paidCtrl = TextEditingController();
-  // Hanna Pharmacy POS: is line ka Batch No. aur Expiry (MM/YY)
-  final _batchCtrl = TextEditingController();
-  final _batchFocus = FocusNode();
-  final _expiryCtrl = TextEditingController();
-  final _expiryFocus = FocusNode();
 
   DateTime _purchaseDate = DateTime.now();
   Product? _pickedProduct;
@@ -207,10 +197,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
     _wholesaleCtrl.dispose();
     _shopkeeperCtrl.dispose();
     _paidCtrl.dispose();
-    _batchCtrl.dispose();
-    _batchFocus.dispose();
-    _expiryCtrl.dispose();
-    _expiryFocus.dispose();
     super.dispose();
   }
 
@@ -287,8 +273,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
       'retail': _retailCtrl.text,
       'wholesale': _wholesaleCtrl.text,
       'shopkeeper': _shopkeeperCtrl.text,
-      'batch': _batchCtrl.text,
-      'expiry': _expiryCtrl.text,
       'unit': _selectedUnit,
     });
     final empty = _itemCtrl.text.trim().isEmpty && _qtyCtrl.text.trim().isEmpty && _rateCtrl.text.trim().isEmpty;
@@ -321,8 +305,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
         _retailCtrl.text = (m['retail'] as String?) ?? '';
         _wholesaleCtrl.text = (m['wholesale'] as String?) ?? '';
         _shopkeeperCtrl.text = (m['shopkeeper'] as String?) ?? '';
-        _batchCtrl.text = (m['batch'] as String?) ?? '';
-        _expiryCtrl.text = (m['expiry'] as String?) ?? '';
         _mainRate = _toMain(double.tryParse(_rateCtrl.text.trim()) ?? 0.0);
         _mainRetail = _toMain(double.tryParse(_retailCtrl.text.trim()) ?? 0.0);
         _mainWholesale = _toMain(double.tryParse(_wholesaleCtrl.text.trim()) ?? 0.0);
@@ -466,8 +448,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
     _retailCtrl.clear();
     _wholesaleCtrl.clear();
     _shopkeeperCtrl.clear();
-    _batchCtrl.clear();
-    _expiryCtrl.clear();
     _pickedProduct = null;
     _selectedUnit = '';
     _mainRate = 0.0;
@@ -567,9 +547,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
       MapEntry(_lotCtrl, _lotFocus),
       MapEntry(_retailCtrl, _retailFocus),
       MapEntry(_wholesaleCtrl, _wholesaleFocus),
-      if (!AppInfo.pharmacyMode) MapEntry(_shopkeeperCtrl, _shopkeeperFocus),
-      MapEntry(_batchCtrl, _batchFocus),
-      MapEntry(_expiryCtrl, _expiryFocus),
+      MapEntry(_shopkeeperCtrl, _shopkeeperFocus),
     ];
     final i = order.indexWhere((e) => identical(e.value, current));
     for (var j = i + 1; j < order.length; j++) {
@@ -588,35 +566,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
       if (!mounted || ctx == null || !f.hasFocus) return;
       Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 180), curve: Curves.easeOut);
     });
-  }
-
-  /// Bill Scan: photo -> OCR -> review -> items yahan purchase lines ban jate hain. Jo item kisi maujooda
-  /// product se mil jaye wo juda hota hai (stock add hoga); baaqi barcode-khali lines ban jati hain jinhein
-  /// tap karke product chunna hai (save par bhi yaad dilaya jata hai).
-  Future<void> _scanBill() async {
-    final items = await Navigator.of(context).push<List<ScannedItem>>(MaterialPageRoute(builder: (_) => const BillScanScreen()));
-    if (items == null || items.isEmpty || !mounted) return;
-    var linked = 0;
-    setState(() {
-      for (final it in items) {
-        final p = matchScannedProduct(it.name, _products);
-        if (p != null) linked++;
-        _lines.add(PurchaseLine(
-          itemName: p?.name ?? it.name,
-          barcode: p?.barcode,
-          qty: it.qty,
-          unit: p?.unit ?? 'pcs',
-          rate: it.rate,
-          amount: it.qty * it.rate,
-        ));
-      }
-    });
-    _saveDraftSoon();
-    final unlinked = items.length - linked;
-    _toast(unlinked == 0
-        ? Loc.t('${items.length} items added from the bill', 'بل سے ${items.length} آئٹم شامل ہو گئے')
-        : Loc.t('${items.length} items added — $unlinked not linked to a product yet (tap the line to pick it)',
-            '${items.length} آئٹم شامل ہوئے — $unlinked ابھی پروڈکٹ سے منسلک نہیں (لائن پر ٹیپ کر کے چنیں)'));
   }
 
   Future<void> _addLine() async {
@@ -653,17 +602,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
       _mainRate = product.toPrimaryUnitRate(rate, _effectiveUnit);
     }
 
-    // Hanna Pharmacy POS: expiry MM/YY samjho; ghalat ho to wahin roko.
-    final expiry = MedicalExpiry.parse(_expiryCtrl.text);
-    if (expiry == null) {
-      _toast('Expiry MM/YY likhen, e.g. 06/27');
-      _expiryFocus.requestFocus();
-      return;
-    }
-    if (expiry.isNotEmpty && MedicalExpiry.isExpired(expiry)) {
-      _toast('⚠ Ye batch pehle hi expire ho chuka hai (${MedicalExpiry.display(expiry)})');
-    }
-
     final unit = _effectiveUnit;
     final line = PurchaseLine(
       itemName: product?.name ?? name,
@@ -675,8 +613,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
       retailRate: _retailCtrl.text.trim().isEmpty ? 0.0 : _mainRetail,
       wholesaleRate: _wholesaleCtrl.text.trim().isEmpty ? 0.0 : _mainWholesale,
       shopkeeperRate: _shopkeeperCtrl.text.trim().isEmpty ? 0.0 : _mainShopkeeper,
-      batchNo: _batchCtrl.text.trim(),
-      expiry: expiry,
     );
 
     setState(() {
@@ -706,8 +642,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
       _mainWholesale = l.wholesaleRate;
       _mainShopkeeper = l.shopkeeperRate;
       _lastPurchaseMainRate = 0.0;
-      _batchCtrl.text = l.batchNo;
-      _expiryCtrl.text = MedicalExpiry.display(l.expiry);
     });
     _fillRetailWholesaleText();
     _qtyFocus.requestFocus();
@@ -1497,8 +1431,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
   static const Color _kBlue = Color(0xFF1450C7);
   static const Color _kGreen = Color(0xFF0E8A52);
 
-  // Kotlin loadFirmName(): saved shop_name, warna "Hanna Pharmacy POS".
-  String _firmName = 'Hanna Pharmacy POS';
+  // Kotlin loadFirmName(): saved shop_name, warna "IBTISAAM Kiryana Store".
+  String _firmName = 'Hanna Bakery';
 
   Future<void> _loadFirmName() async {
     final n = (await UserRepository.instance.getSetting('shop_name'))?.trim() ?? '';
@@ -1647,22 +1581,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
             ),
             const SizedBox(width: 8),
           ],
-          // Bill Scan: supplier bill ki photo se items seedha is purchase mein.
-          InkWell(
-            borderRadius: BorderRadius.circular(30),
-            onTap: _scanBill,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-              decoration: BoxDecoration(color: const Color(0x33FFFFFF), borderRadius: BorderRadius.circular(30)),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.document_scanner_outlined, color: Colors.white, size: 18),
-                const SizedBox(width: 6),
-                Text(Loc.t('Scan', 'سکین'),
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13)),
-              ]),
-            ),
-          ),
-          const SizedBox(width: 8),
           // Print / Share = saved bill ka Bill Preview (naya bill => "Save the purchase first").
           PopupMenuButton<String>(
             tooltip: Loc.t('More', 'مزید'),
@@ -2016,50 +1934,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
           controller: _shopkeeperCtrl,
           focus: _shopkeeperFocus,
           hint: Loc.t('Optional', 'اختیاری'),
+          action: TextInputAction.done,
           onChanged: (v) {
             _onShopkeeperChanged(v);
             _saveEntrySoon();
           },
-          // Medical Store: Shopkeeper -> Batch -> Expiry -> line add
-          onSubmitted: () => _advanceFrom(_shopkeeperFocus),
-        ),
-      );
-
-  /// Hanna Pharmacy POS: Batch No. + Expiry (MM/YY), ek line mein.
-  Widget _batchExpiryRow() => Padding(
-        padding: const EdgeInsets.only(top: 12),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _kInner(
-                label: 'Batch No.',
-                child: _kField(
-                  controller: _batchCtrl,
-                  focus: _batchFocus,
-                  hint: 'e.g. B2304',
-                  number: false,
-                  onChanged: (_) => _saveEntrySoon(),
-                  onSubmitted: () => _advanceFrom(_batchFocus),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _kInner(
-                label: 'Expiry (MM/YY)',
-                child: _kField(
-                  controller: _expiryCtrl,
-                  focus: _expiryFocus,
-                  hint: 'e.g. 06/27',
-                  number: false,
-                  action: TextInputAction.done,
-                  onChanged: (_) => _saveEntrySoon(),
-                  onSubmitted: _addLine,
-                ),
-              ),
-            ),
-          ],
+          onSubmitted: _addLine,
         ),
       );
 
@@ -2201,7 +2081,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
                       ),
                     ),
                     optionsViewBuilder: (context, onSelected, options) =>
-                        autocompleteOptionsView<Product>(context, onSelected, options, (o) => o.medicalInfoLine.isEmpty ? o.name : '${o.name}  —  ${o.medicalInfoLine}', maxWidth: fieldBox.maxWidth),
+                        autocompleteOptionsView<Product>(context, onSelected, options, (o) => o.name, maxWidth: fieldBox.maxWidth),
                   )),
                 ),
                 // 📊 = supplier rate comparison (admin/manager), + = naya product.
@@ -2338,9 +2218,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
             ],
           ),
           if (MediaQuery.of(context).size.width < 600)
-            if (!AppInfo.pharmacyMode) Padding(padding: const EdgeInsets.only(top: 12), child: _shopkeeperField()),
-          if (!AppInfo.pharmacyMode) _shopkeeperWarning(),
-          _batchExpiryRow(),
+            Padding(padding: const EdgeInsets.only(top: 12), child: _shopkeeperField()),
+          _shopkeeperWarning(),
           Padding(
             padding: const EdgeInsets.fromLTRB(6, 14, 0, 10),
             child: Text(
@@ -2412,19 +2291,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> with WidgetsBindingObse
                             '${qtyText(line.qty)} ${line.unit}  ×  ${line.rate.toStringAsFixed(2)}',
                             style: TextStyle(fontSize: 11.5, color: ThemeManager.palette.textMuted),
                           ),
-                          // Hanna Pharmacy POS: is line ka batch / expiry
-                          if (line.batchNo.isNotEmpty || line.expiry.isNotEmpty)
-                            Text(
-                              [
-                                if (line.batchNo.isNotEmpty) 'Batch ${line.batchNo}',
-                                if (line.expiry.isNotEmpty)
-                                  'Exp ${MedicalExpiry.display(line.expiry)}${MedicalExpiry.isExpired(line.expiry) ? ' (EXPIRED)' : ''}',
-                              ].join('  •  '),
-                              style: TextStyle(
-                                fontSize: 11.5,
-                                color: MedicalExpiry.isExpired(line.expiry) ? ThemeManager.palette.red : ThemeManager.palette.teal,
-                              ),
-                            ),
                         ],
                       ),
                     ),

@@ -2,7 +2,6 @@
 import 'package:sqflite/sqflite.dart';
 
 import '../db/maintenance_sync.dart';
-import '../db/rx_repository.dart' show applyRxFromSale;
 import 'sync_queue_dao.dart';
 import 'sync_queue_helper.dart';
 import 'sync_types.dart';
@@ -107,9 +106,6 @@ Future<void> applySales(DatabaseExecutor db, List<SyncDoc> rows, {required int F
       }
       await db.delete('sale_items', where: 'invoice = ?', whereArgs: [invoice]);
       await db.delete('sales', where: 'invoice = ?', whereArgs: [invoice]);
-      try {
-        await db.delete('rx_records', where: 'invoice = ?', whereArgs: [invoice]);
-      } catch (_) {}
       continue;
     }
 
@@ -160,8 +156,6 @@ Future<void> applySales(DatabaseExecutor db, List<SyncDoc> rows, {required int F
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
-    // Hanna Pharmacy POS: parchi (Rx) record.
-    if (row.containsKey('rx')) await applyRxFromSale(db, invoice, row['rx']);
 
     final itemRows = row['items'];
     if (itemRows is List && itemRows.isNotEmpty) {
@@ -290,9 +284,6 @@ Future<void> applyPurchases(DatabaseExecutor db, List<SyncDoc> rows, {required i
           'wholesaleRate': _d(im['wholesaleRate']) ?? 0.0,
           // Purane device ki entry mein field nahi => 0 (kuch nahi tootta).
           'shopkeeperRate': _d(im['shopkeeperRate']) ?? 0.0,
-          // Hanna Pharmacy POS: batch + expiry
-          if (im.containsKey('batchNo')) 'batchNo': _s(im['batchNo']) ?? '',
-          if (im.containsKey('expiry')) 'expiry': _s(im['expiry']) ?? '',
         });
       }
       if (items.isNotEmpty) {

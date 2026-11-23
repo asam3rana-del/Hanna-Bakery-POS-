@@ -610,7 +610,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [ThemeManager.palette.navy, ThemeManager.palette.navyLight]),
+          gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [ThemeManager.heroTop, ThemeManager.heroBottom]),
         ),
         child: SafeArea(
           child: Center(
@@ -619,22 +619,30 @@ class _LoginScreenState extends State<LoginScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 440),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  // Hanna Pharmacy POS: lock ki jagah app ka logo (assets/images/logo.png = app icon).
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Image.asset('assets/images/logo.png', width: 84, height: 84,
-                        errorBuilder: (_, __, ___) => CircleAvatar(
-                            radius: 40, backgroundColor: Colors.white, child: Icon(Icons.lock, size: 36, color: ThemeManager.palette.navyInk))),
+                  Container(
+                    width: 86,
+                    height: 86,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white.withValues(alpha: 0.06),
+                      border: Border.all(color: ThemeManager.gold, width: 1.6),
+                      boxShadow: [BoxShadow(color: ThemeManager.gold.withValues(alpha: 0.25), blurRadius: 28)],
+                    ),
+                    child: const Icon(Icons.bakery_dining, size: 42, color: ThemeManager.gold),
                   ),
-                  const SizedBox(height: 16),
-                  const Text('Hanna Pharmacy POS', style: TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 4),
-                  Text(_setupMode ? Loc.t('First-time setup', 'پہلی دفعہ سیٹ اپ') : 'Point of Sale',
-                      style: TextStyle(color: ThemeManager.palette.headerSubtitleColor)),
+                  const SizedBox(height: 18),
+                  const Text('HANNA BAKERY',
+                      style: TextStyle(color: ThemeManager.cream, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 4)),
+                  const SizedBox(height: 6),
+                  Text(_setupMode ? Loc.t('FIRST-TIME SETUP', 'پہلی دفعہ سیٹ اپ') : 'EXECUTIVE POINT OF SALE',
+                      style: const TextStyle(color: ThemeManager.gold, fontSize: 11.5, fontWeight: FontWeight.w800, letterSpacing: 3)),
                   const SizedBox(height: 26),
                   Card(
-                    elevation: 8,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+                    elevation: 12,
+                    shadowColor: Colors.black.withValues(alpha: 0.5),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(24),
+                        side: BorderSide(color: ThemeManager.gold.withValues(alpha: 0.35))),
                     child: Padding(
                       padding: const EdgeInsets.all(22),
                       child: Column(children: [

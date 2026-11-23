@@ -5,7 +5,6 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ah_developer_kiryana_store/services/printer_service.dart';
 import 'package:ah_developer_kiryana_store/services/usb_printer.dart';
 import 'package:ah_developer_kiryana_store/utils/bill_doc.dart';
-import 'package:ah_developer_kiryana_store/utils/bill_scan_parser.dart';
 import 'package:ah_developer_kiryana_store/utils/escpos.dart';
 import 'package:ah_developer_kiryana_store/utils/receipt_lines.dart';
 
@@ -169,46 +168,6 @@ void main() {
       expect(_doc(1).balance, 10);
     });
   });
-
-  group('parseBillText', () {
-    test('qty x rate = amount lines', () {
-      final l = parseBillText('Sugar 2 150 300\nRice 5 x 200 1000');
-      expect(l.length, 2);
-      expect(l[0].name, 'Sugar');
-      expect(l[0].qty, '2');
-      expect(l[0].rate, '150');
-      expect(l[1].name, 'Rice');
-      expect(l[1].qty, '5');
-      expect(l[1].rate, '200');
-    });
-
-    test('skips totals, dates, phone and pure-number lines', () {
-      final l = parseBillText('SHOP NAME\nDate 12/05/2026\nTotal 1300\nPaid 1000\n-----\n12345\nOil 1 480');
-      expect(l.any((e) => e.name == 'Oil'), isTrue);
-      expect(l.any((e) => e.name.toLowerCase().contains('total')), isFalse);
-    });
-
-    test('single number = rate with qty 1', () {
-      final l = parseBillText('Soap 85');
-      expect(l.single.qty, '1');
-      expect(l.single.rate, '85');
-    });
-  });
-
-  group('confirmedItems', () {
-    test('only ticked, valid rows', () {
-      final items = confirmedItems([
-        ScannedLine(name: 'A', qty: '2', rate: '10'),
-        ScannedLine(name: 'B', qty: '2', rate: '10', include: false),
-        ScannedLine(name: '', qty: '2', rate: '10'),
-        ScannedLine(name: 'C', qty: '0', rate: '10'),
-        ScannedLine(name: 'D', qty: '1', rate: ''),
-      ]);
-      expect(items.length, 1);
-      expect(items.single.name, 'A');
-      expect(items.single.qty, 2);
-    });
-  });
 }
 
 // Windows / desktop printer transport (Network IP printer address parsing).
@@ -273,7 +232,7 @@ void _desktopPrinterTests() {
 
     test('test slip uses shop name or default and shows connection', () {
       expect(EscPos.testText(shopName: ' Ali Store ', connection: 'NETWORK'), contains('Ali Store'));
-      expect(EscPos.testText(), contains('Hanna Pharmacy POS'));
+      expect(EscPos.testText(), contains('Hanna Bakery'));
       expect(EscPos.testText(connection: 'USB'), contains('Connection: USB'));
     });
   });

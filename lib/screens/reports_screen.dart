@@ -1,13 +1,10 @@
 import 'package:flutter/material.dart';
-import '../app_info.dart';
 
 import '../db/reports_repository.dart';
 import '../theme/theme_manager.dart';
 import '../utils/loc.dart';
 import 'balance_sheet_screen.dart';
-import 'due_reminders_screen.dart';
-import 'medicine_screen.dart';
-import 'rx_register_screen.dart';
+import 'expiry_report_screen.dart';
 import 'history_screen.dart';
 import 'inventory_insights_screen.dart';
 import 'monthly_screen.dart';
@@ -15,12 +12,16 @@ import 'daily_bills_screen.dart';
 import 'party_reports_screen.dart';
 import 'payments_screen.dart';
 import 'rate_comparison_screen.dart';
+import 'bakery_orders_screen.dart';
+import 'wastage_screen.dart';
+import 'production_screen.dart';
 import 'returns_report_screen.dart';
 import 'stock_audit_screen.dart';
 import 'stock_movement_screen.dart';
 import 'stock_report_screen.dart';
 import '../widgets/role_guard.dart';
 import '../services/permissions.dart';
+import '../services/session.dart';
 import '../widgets/permission_guard.dart';
 
 /// Mirrors ReportsActivity.kt.
@@ -146,10 +147,7 @@ class _ReportsBodyState extends State<_ReportsBody> {
               _row(p, Loc.t('Returns Report', 'واپسی رپورٹ'),
                   Loc.t('Sale & purchase returns, item by item', 'سیل اور خریداری کی واپسیاں، آئٹم وار'), p.flatPinkFg,
                   () => _open(const ReturnsReportScreen())),
-            _row(p, Loc.t('℞ Controlled Drugs Register', '℞ کنٹرولڈ ادویات رجسٹر'),
-                Loc.t('Patient, doctor & prescription for every controlled sale', 'ہر کنٹرولڈ سیل کا مریض، ڈاکٹر اور نسخہ'), p.flatPurpleFg,
-                () => _open(const RxRegisterScreen())),
-            if (!AppInfo.pharmacyMode && _can('daily_bills'))
+            if (_can('daily_bills'))
               _row(p, Loc.t('Daily Bills', 'روزانہ بلز'),
                   Loc.t('Har customer ka din ka ek bill + balance', 'ہر کسٹمر کا دن کا ایک بل اور بیلنس'), p.flatTealFg,
                   () => _open(const DailyBillsScreen())),
@@ -161,7 +159,19 @@ class _ReportsBodyState extends State<_ReportsBody> {
               _row(p, Loc.t('Rate Comparison', 'ریٹ کا موازنہ'),
                   Loc.t('Compare supplier rates per item', 'فی آئٹم سپلائرز کے ریٹ کا موازنہ'), p.flatTealFg,
                   () => _openG('rate_comparison', const RateComparisonScreen())),
-            if (_anyOf(const ['party_reports', 'payments_report', 'due_reminders']))
+            _section(p, Loc.t('Bakery reports', 'بیکری رپورٹس')),
+            _row(p, Loc.t('Cake Orders Summary', 'کیک آرڈرز کا خلاصہ'),
+                Loc.t('Orders, value and money received by month', 'مہینہ وار آرڈرز، قیمت اور وصولی'), p.flatPinkFg,
+                () => _open(const BakeryOrderSummaryScreen())),
+            if (Session.isAdminOrManager)
+              _row(p, Loc.t('Wastage Report', 'ویسٹیج رپورٹ'),
+                  Loc.t('Stale / damaged goods and loss at cost', 'باسی / خراب مال اور لاگت پر نقصان'), p.red,
+                  () => _open(const WastageScreen())),
+            if (Session.isAdminOrManager)
+              _row(p, Loc.t('Production Log', 'پروڈکشن ریکارڈ'),
+                  Loc.t('What was baked and material cost', 'کیا تیار ہوا اور کچے مال کی لاگت'), p.flatAmberFg,
+                  () => _open(const ProductionScreen())),
+            if (_anyOf(const ['party_reports', 'payments_report']))
               _section(p, Loc.t('Party reports', 'پارٹی رپورٹس')),
             if (_can('party_reports'))
               _row(p, Loc.t('Party Reports', 'پارٹی رپورٹس'),
@@ -171,10 +181,6 @@ class _ReportsBodyState extends State<_ReportsBody> {
               _row(p, Loc.t('Payments Report', 'ادائیگیوں کی رپورٹ'),
                   Loc.t('Payments received vs made, by period', 'ادائیگیاں وصول اور ادا، مدت کے مطابق'), p.flatTealFg,
                   () => _openG('payments_report', const PaymentsScreen())),
-            if (_can('due_reminders'))
-              _row(p, Loc.t('Due Date Reminders', 'ادائیگی کی یاد دہانی'),
-                  Loc.t('Credit sales still owed, by due date', 'ادھار سیلز جو واجب الادا ہیں'), p.flatBlueFg,
-                  () => _open(const DueRemindersScreen())),
             if (_anyOf(const ['stock_report', 'stock_history', 'cost_history', 'stock_audit', 'inventory_insights']))
               _section(p, Loc.t('Stock reports', 'اسٹاک رپورٹس')),
             if (_can('stock_report'))
@@ -195,7 +201,7 @@ class _ReportsBodyState extends State<_ReportsBody> {
             if (_can('stock_report'))
               _row(p, Loc.t('Expiry Report', 'ایکسپائری رپورٹ'),
                   Loc.t('Stock that has expired or expires in 30 days', 'جو مال ایکسپائر ہو چکا یا 30 دن میں ہوگا'),
-                  p.red, () => _openG('stock_report', const MedicineScreen())),
+                  p.red, () => _openG('stock_report', const ExpiryReportScreen())),
             // Reorder / Damage / Margin / Movers ek hi screen ke 4 tab hain — pehle 4 alag rows thin (duplicate).
             if (_can('inventory_insights'))
               _row(p, Loc.t('Inventory Insights', 'انوینٹری تجزیہ'),

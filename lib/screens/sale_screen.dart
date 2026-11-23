@@ -1,5 +1,4 @@
 import 'dart:async';
-import '../app_info.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,9 +29,6 @@ import '../utils/discount_calculator.dart';
 import '../utils/due_days.dart';
 import '../utils/input_validation.dart';
 import '../utils/loc.dart';
-import '../utils/medical_expiry.dart';
-import '../db/rx_repository.dart';
-import '../widgets/rx_dialog.dart';
 import '../utils/sale_cart.dart';
 import '../utils/split_payment.dart';
 import '../utils/stock_touch_policy.dart';
@@ -79,8 +75,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
   final _paidFocus = FocusNode();
   final _priceCtrl = TextEditingController();
   final _discountCtrl = TextEditingController();
-  // Hanna Pharmacy POS: discount % (likha ho to Rs wale discount ki jagah yahi chalta hai).
-  final _discountPctCtrl = TextEditingController();
   final _paidCtrl = TextEditingController();
   /// Udhaar bill par payment ki date (din ki shuruaat, millis). 0 = set nahi.
   int _dueDateMillis = 0;
@@ -139,7 +133,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
   final Map<String, double> _originalSmallestByBarcode = {};
 
   List<Product> _products = const [];
-  RxRecord? _pendingRx; // Credit-limit retry par parchi dobara na poochi jaye
   List<Customer> _customers = const [];
   StreamSubscription<List<Product>>? _productSub;
   StreamSubscription<List<Customer>>? _customerSub;
@@ -252,8 +245,8 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
   /// Items khatam: Enter khali item box pe -> Discount.
   void _focusAfterItems() => _focus(_discountFocus);
 
-  // Kotlin loadFirmName(): saved shop_name, warna "Hanna Pharmacy POS".
-  String _firmName = 'Hanna Pharmacy POS';
+  // Kotlin loadFirmName(): saved shop_name, warna "IBTISAAM Kiryana Store".
+  String _firmName = 'Hanna Bakery';
 
   Future<void> _loadFirmName() async {
     final n = (await UserRepository.instance.getSetting('shop_name'))?.trim() ?? '';
@@ -350,7 +343,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
     _paidFocus.dispose();
     _priceCtrl.dispose();
     _discountCtrl.dispose();
-    _discountPctCtrl.dispose();
     _paidCtrl.dispose();
     super.dispose();
   }
@@ -369,7 +361,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
         customer: _customerCtrl.text,
         isWholesale: _isWholesale,
         isShopkeeper: _isShopkeeper,
-        discount: _discountDraftText,
+        discount: _discountCtrl.text,
         paid: _paidCtrl.text,
         pendingItemName: _itemCtrl.text,
         pendingQty: _qtyCtrl.text,
@@ -407,7 +399,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
         _customerCtrl.text = draft.customer;
         _isWholesale = draft.isWholesale;
         _isShopkeeper = draft.isShopkeeper;
-        if (draft.discount.isNotEmpty) _restoreDiscountText(draft.discount);
+        if (draft.discount.isNotEmpty) _discountCtrl.text = draft.discount;
         if (draft.paid.isNotEmpty) _paidCtrl.text = draft.paid;
         // The saved date is intentionally not restored (see SaleDraft) —
         // the bill is dated "now"; the date picker still allows another day.
@@ -494,31 +486,9 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
 
   double get _subtotal => _lines.fold(0.0, (sum, l) => sum + l.amount);
 
-  /// Discount Rs mein: % likha ho to subtotal ka utna %, warna Rs wala field.
-  double get _discountInput {
-    final pct = double.tryParse(_discountPctCtrl.text.trim());
-    if (pct != null && pct > 0) return _subtotal * pct.clamp(0.0, 100.0) / 100.0;
-    return double.tryParse(_discountCtrl.text.trim()) ?? 0.0;
-  }
-
-  /// Draft / hold mein discount: % ho to "10%" ki shakal mein (wapas aane par % field mein).
-  String get _discountDraftText {
-    final pct = _discountPctCtrl.text.trim();
-    return pct.isNotEmpty ? '$pct%' : _discountCtrl.text;
-  }
-
-  void _restoreDiscountText(String t) {
-    final v = t.trim();
-    if (v.endsWith('%')) {
-      _discountPctCtrl.text = v.substring(0, v.length - 1).trim();
-    } else {
-      _discountCtrl.text = v;
-    }
-  }
-
   BillTotals get _totals => DiscountCalculator.compute(
         _subtotal,
-        _discountInput,
+        double.tryParse(_discountCtrl.text.trim()) ?? 0.0,
         effectivePaidInput(_splitPayments, double.tryParse(_paidCtrl.text.trim()) ?? 0.0),
       );
 
@@ -549,25 +519,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
     _suggestCustomerRate();
     _focus(_qtyFocus);
     _revealItemEntry(); // item chunte hi unit / qty / rate wala card upar nazar aaye
-    _checkMedicineExpiry(p);
-  }
-
-  /// Hanna Pharmacy POS: expired / 30 din mein expire hone wali dawai par warning (rack/formula bhi).
-  Future<void> _checkMedicineExpiry(Product p) async {
-    String? warning;
-    try {
-      warning = await MedicalBatches.saleWarning(p);
-    } catch (_) {}
-    if (!mounted || _pickedProduct?.barcode != p.barcode) return;
-    if (warning != null) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(warning),
-        backgroundColor: ThemeManager.palette.red,
-        duration: const Duration(seconds: 4),
-      ));
-    } else if (p.rackLocation.trim().isNotEmpty) {
-      _toast('Rack ${p.rackLocation.trim()}');
-    }
   }
 
   void _refillAutoPrice() {
@@ -682,8 +633,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
       if (c.name.toLowerCase() == name) {
         if (c.rateType.isEmpty) return false;
         final mode = rateModeFromString(c.rateType);
-        // Pharmacy: Shopkeeper rate nahi — aisa customer Wholesale par.
-        _onSaleTypeChanged(mode == RateMode.shopkeeper ? (AppInfo.pharmacyMode ? 1 : 2) : (mode == RateMode.wholesale ? 1 : 0));
+        _onSaleTypeChanged(mode == RateMode.shopkeeper ? 2 : (mode == RateMode.wholesale ? 1 : 0));
         return true;
       }
     }
@@ -938,7 +888,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
       _lines.clear();
       _customerCtrl.clear();
       _discountCtrl.clear();
-      _discountPctCtrl.clear();
       _paidCtrl.clear();
       _dueDateMillis = 0;
       _splitPayments = [];
@@ -1013,24 +962,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
       if (risk.risky && !await _confirmCreditRisk(_customerCtrl.text.trim(), risk)) return;
     }
 
-    // Hanna Pharmacy POS: bill mein Controlled (℞) dawai ho to patient / doctor / parchi pehle.
-    // (Credit-limit retry par dobara na poocho — pehli baar ka record [_pendingRx] mein hai.)
-    final rxMeds = _controlledNames(_lines.map((l) => l.barcode));
-    RxRecord? rx;
-    if (rxMeds.isNotEmpty) {
-      if (skipDuplicateCheck && _pendingRx != null) {
-        rx = _pendingRx;
-      } else {
-        RxRecord? initial;
-        if (_isEdit) initial = await RxRepository.instance.get(widget.editInvoice!);
-        initial ??= _pendingRx;
-        if (!mounted) return;
-        rx = await askRxDetails(context, medicines: rxMeds, initial: initial);
-        if (rx == null || !mounted) return;
-        _pendingRx = rx;
-      }
-    }
-
     // Snapshot for the bill preview — _clearAll() wipes the screen after save.
     final previewLines = List<SaleLine>.of(_lines);
     final previewCustomer = _customerCtrl.text.trim();
@@ -1043,7 +974,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
       final invoice = await SaleRepository.instance.saveSale(
         lines: _lines,
         customerName: _customerCtrl.text.trim(),
-        discountInput: _discountInput,
+        discountInput: double.tryParse(_discountCtrl.text.trim()) ?? 0.0,
         paidInput: double.tryParse(_paidCtrl.text.trim()) ?? 0.0,
         saleType: rateModeName(_rateMode),
         saleDateMillis: _saleDate.millisecondsSinceEpoch,
@@ -1055,21 +986,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
         // Sirf udhaar bill par date lagti hai; poora paid ho to 0.
         dueDateMillis: totals.due > 0.009 ? _effectiveDueMillis() : 0,
       );
-      if (rx != null) {
-        try {
-          await RxRepository.instance.save(RxRecord(
-            invoice: invoice,
-            patientName: rx.patientName,
-            patientPhone: rx.patientPhone,
-            doctorName: rx.doctorName,
-            prescriptionNo: rx.prescriptionNo,
-            createdAt: rx.createdAt,
-          ));
-        } catch (e) {
-          _toast('Parchi record save nahi hua: $e');
-        }
-      }
-      _pendingRx = null;
       if (!mounted) return;
       // Kotlin SaleSaveSuccess: har stock warning alag toast (save phir bhi ho chuka hai).
       for (final w in stockWarnings) {
@@ -1403,29 +1319,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
     await _submitQuickSale(request);
   }
 
-  /// Hanna Pharmacy POS: in barcodes mein se Controlled (℞) dawaiyon ke naam.
-  List<String> _controlledNames(Iterable<String> barcodes) {
-    final out = <String>[];
-    for (final b in barcodes) {
-      for (final p in _products) {
-        if (p.barcode == b && p.controlled && !out.contains(p.name)) out.add(p.name);
-      }
-    }
-    return out;
-  }
-
   Future<void> _submitQuickSale(QuickSaleRequest r, {bool overrideCreditLimit = false}) async {
-    // Hanna Pharmacy POS: Controlled dawai ki Quick Sale par bhi parchi zaroori.
-    RxRecord? rx;
-    if (r.product.controlled) {
-      if (overrideCreditLimit && _pendingRx != null) {
-        rx = _pendingRx;
-      } else {
-        rx = await askRxDetails(context, medicines: [r.product.name]);
-        if (rx == null || !mounted) return;
-        _pendingRx = rx;
-      }
-    }
     try {
       final result = await SaleRepository.instance.saveQuickSale(
         product: r.product,
@@ -1435,21 +1329,6 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
         customerName: r.customerName,
         overrideCreditLimit: overrideCreditLimit,
       );
-      if (rx != null) {
-        try {
-          await RxRepository.instance.save(RxRecord(
-            invoice: result.invoice,
-            patientName: rx.patientName,
-            patientPhone: rx.patientPhone,
-            doctorName: rx.doctorName,
-            prescriptionNo: rx.prescriptionNo,
-            createdAt: rx.createdAt,
-          ));
-        } catch (e) {
-          _toast('Parchi record save nahi hua: $e');
-        }
-      }
-      _pendingRx = null;
       HapticFeedback.mediumImpact(); // Kotlin QuickSaleSuccess -> vibrateShort()
       _toast(result.isCredit
           ? 'Quick Sale (credit) saved: ${result.invoice}'
@@ -1510,7 +1389,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
       isWholesale: _isWholesale,
         isShopkeeper: _isShopkeeper,
       isCash: _customerCtrl.text.trim().isEmpty,
-      discountText: _discountDraftText.trim(),
+      discountText: _discountCtrl.text.trim(),
       lines: List.of(_lines),
     ));
     try {
@@ -1559,9 +1438,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
       _customerCtrl.text = draft.customerName;
       _isWholesale = draft.isWholesale;
         _isShopkeeper = draft.isShopkeeper;
-      _discountPctCtrl.clear();
-      _discountCtrl.clear();
-      _restoreDiscountText(draft.discountText);
+      _discountCtrl.text = draft.discountText;
       _paidCtrl.clear();
       _splitPayments = [];
       _lines
@@ -1984,8 +1861,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
         const SingleActivator(LogicalKeyboardKey.f6): () {
           if (_splitPayments.isEmpty) _paidFocus.requestFocus();
         },
-        const SingleActivator(LogicalKeyboardKey.f7): () =>
-            _onSaleTypeChanged(_isShopkeeper ? 0 : (_isWholesale ? (AppInfo.pharmacyMode ? 0 : 2) : 1)),
+        const SingleActivator(LogicalKeyboardKey.f7): () => _onSaleTypeChanged(_isShopkeeper ? 0 : (_isWholesale ? 2 : 1)),
         const SingleActivator(LogicalKeyboardKey.f8): _toggleAmountMode,
         const SingleActivator(LogicalKeyboardKey.f9): () { if (!_saving) _save(); },
         const SingleActivator(LogicalKeyboardKey.keyS, control: true): () { if (!_saving) _save(); },
@@ -2301,8 +2177,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
               items: [
                 DropdownMenuItem(value: 0, child: Text(Loc.t('Retail', 'ریٹیل'))),
                 DropdownMenuItem(value: 1, child: Text(Loc.t('Wholesale', 'ہول سیل'))),
-                if (!AppInfo.pharmacyMode || _isShopkeeper)
-                  DropdownMenuItem(value: 2, child: Text(Loc.t('Shopkeeper', 'دکاندار'))),
+                DropdownMenuItem(value: 2, child: Text(Loc.t('Shopkeeper', 'دکاندار'))),
               ],
               onChanged: (v) {
                 if (v == null) return;
@@ -2552,7 +2427,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
                 ),
               ),
               optionsViewBuilder: (context, onSelected, options) =>
-                  autocompleteOptionsView<Product>(context, onSelected, options, (o) => o.medicalInfoLine.isEmpty ? o.name : '${o.name}  —  ${o.medicalInfoLine}', maxWidth: fieldBox.maxWidth),
+                  autocompleteOptionsView<Product>(context, onSelected, options, (o) => o.name, maxWidth: fieldBox.maxWidth),
             )),
           ),
           if (picked != null)
@@ -2849,25 +2724,7 @@ class _SaleScreenState extends State<SaleScreen> with WidgetsBindingObserver {
             ],
           ),
           const SizedBox(height: 12),
-          // Discount: % ya Rs. % likhne par Rs wala band (aur khali) — items badlein to % khud naya hisaab lagata hai.
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(
-              flex: 2,
-              child: PremiumLabeledField(emoji: '%', label: 'Discount %', accent: ThemeManager.palette.orange, controller: _discountPctCtrl,
-                  onSubmitted: () => _focus(_paidFocus),
-                  onChanged: (v) => setState(() {
-                        if (v.trim().isNotEmpty) _discountCtrl.clear();
-                      })),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 3,
-              child: PremiumLabeledField(emoji: '➖', label: 'Discount Rs', accent: ThemeManager.palette.orange, controller: _discountCtrl, focusNode: _discountFocus,
-                  enabled: _discountPctCtrl.text.trim().isEmpty,
-                  hint: _discountPctCtrl.text.trim().isEmpty ? '0' : totals.discount.toStringAsFixed(0),
-                  onSubmitted: () => _focus(_paidFocus), onChanged: (_) => setState(() {})),
-            ),
-          ]),
+          PremiumLabeledField(emoji: '➖', label: 'Discount', accent: ThemeManager.palette.orange, controller: _discountCtrl, focusNode: _discountFocus, onSubmitted: () => _focus(_paidFocus), onChanged: (_) => setState(() {})),
           const SizedBox(height: 12),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,

@@ -6,7 +6,7 @@
 TARGET_SDK=36
 # Play Store App ID (2026-11-10 faisla). Kabhi na badlein — badalne se nayi app ban jati hai.
 # `namespace` (Kotlin/Java code ka package) jaan boojh kar wahi rehta hai; sirf applicationId badalta hai.
-APP_ID="${APP_ID:-com.hannasolutions.pos}"
+APP_ID="${APP_ID:-com.hannasolutions.bakery}"
 MIN_SDK=23   # flutter_secure_storage (backup password); Flutter ka apna minimum is se zyada ho to wahi rehta hai
 
 GRADLE=android/app/build.gradle
@@ -48,9 +48,9 @@ echo "android.suppressUnsupportedCompileSdk=$TARGET_SDK" >> android/gradle.prope
 # yeh nahi hoti; sirf tab jodo jab pehle se na hon.
 MANIFEST=android/app/src/main/AndroidManifest.xml
 
-# App ka naam (phone par icon ke neeche): Hanna Pharmacy POS.
-sed -i -E 's/android:label="[^"]*"/android:label="Hanna Pharmacy POS"/' "$MANIFEST"
-grep -q 'android:label="Hanna Pharmacy POS"' "$MANIFEST" || { echo "ERROR: app label not set"; exit 1; }
+# App ka naam (phone par icon ke neeche): Hanna Bakery.
+sed -i -E 's/android:label="[^"]*"/android:label="Hanna Bakery"/' "$MANIFEST"
+grep -q 'android:label="Hanna Bakery"' "$MANIFEST" || { echo "ERROR: app label not set"; exit 1; }
 if ! grep -q "BLUETOOTH_CONNECT" "$MANIFEST"; then
   sed -i '0,/<manifest[^>]*>/s//&\n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" \/>\n    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" \/>\n    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" \/>\n    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" \/>\n    <uses-permission android:name="android.permission.CAMERA" \/>/' "$MANIFEST"
 fi
@@ -599,13 +599,14 @@ fi
 grep -n "esugar" "$GRADLE"
 grep -q "esugar" "$GRADLE" || { echo "ERROR: core library desugaring not applied"; exit 1; }
 
-# --- Hanna Pharmacy POS: app icon (assets/branding/android/res -> generated project) ---
-# Legacy ic_launcher (har density) + Android 8+ adaptive icon (foreground + background rang).
-if [ -d assets/branding/android/res ]; then
-  cp -R assets/branding/android/res/. android/app/src/main/res/
-  MANIFEST_ICON=android/app/src/main/AndroidManifest.xml
-  grep -q 'android:icon="@mipmap/ic_launcher"' "$MANIFEST_ICON" \
-    || sed -i -E 's/android:icon="[^"]*"/android:icon="@mipmap\/ic_launcher"/' "$MANIFEST_ICON"
-  ls android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml >/dev/null || { echo "ERROR: app icon not copied"; exit 1; }
-  echo "=== App icon applied ==="
+# --- App icon: Hanna Software Series ka POS icon (app_icon/android). ---
+# Yahan is liye bhi ke "Import zip" workflow .github/ (build.yml) ko repo mein nahi daalta,
+# magar tools/ aur app_icon/ daal deta hai — icon build.yml badle baghair bhi lag jaye.
+if [ -d app_icon/android ]; then
+  RES=android/app/src/main/res
+  cp -R app_icon/android/. "$RES/"
+  rm -f "$RES"/mipmap-anydpi-v26/ic_launcher_round.xml
+  echo "App icon: Hanna POS"; ls "$RES"/mipmap-xxxhdpi
+else
+  echo "WARNING: app_icon/android nahi mila — purana (Flutter) icon rahega"
 fi

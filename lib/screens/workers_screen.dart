@@ -139,7 +139,7 @@ class _WorkersScreenState extends State<WorkersScreen> {
       backgroundColor: p.bg,
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: p.teal,
-        foregroundColor: Colors.white,
+        foregroundColor: ThemeManager.onGold,
         onPressed: _addWorker,
         icon: const Icon(Icons.person_add_alt_1),
         label: Text(Loc.t('Add Worker', 'ورکر شامل کریں')),
@@ -809,7 +809,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> with SingleTick
         child: ElevatedButton.icon(
           onPressed: _giveAdvance,
           style: ElevatedButton.styleFrom(
-              backgroundColor: p.teal, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
+              backgroundColor: p.teal, foregroundColor: ThemeManager.onGold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
           icon: const Icon(Icons.add),
           label: Text(Loc.t('GIVE ADVANCE', 'ایڈوانس دیں'), style: const TextStyle(fontWeight: FontWeight.bold)),
         ),
@@ -946,7 +946,7 @@ class _WorkerDetailScreenState extends State<WorkerDetailScreen> with SingleTick
                 onPressed: (_busy || calc.earned <= 0 || cutTooBig) ? null : _pay,
                 style: ElevatedButton.styleFrom(
                     backgroundColor: p.teal,
-                    foregroundColor: Colors.white,
+                    foregroundColor: ThemeManager.onGold,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                 child: Text(Loc.t('PAY SALARY', 'تنخواہ دیں'), style: const TextStyle(fontWeight: FontWeight.bold)),

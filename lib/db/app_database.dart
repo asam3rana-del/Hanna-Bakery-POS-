@@ -4,8 +4,8 @@ import 'package:sqflite/sqflite.dart';
 import '../models/return_entry.dart';
 import '../services/demo_mode.dart';
 
+import 'bakery_schema.dart';
 import 'return_undo_repository.dart';
-import 'rx_repository.dart';
 import 'stock_ledger.dart';
 
 /// Ports the Room schema from Database.kt table-for-table so data shape
@@ -14,7 +14,7 @@ import 'stock_ledger.dart';
 ///
 /// DB version starts at 1 here since this is a fresh Flutter DB file (not a
 /// migration of the existing Android SQLite file). If you later decide to
-/// import the existing Hanna Pharmacy POS data, add an import routine
+/// import the existing IBTISAAM Kiryana Store data, add an import routine
 /// rather than trying to open the old .db file directly with a different
 /// schema version.
 class AppDatabase {
@@ -22,7 +22,7 @@ class AppDatabase {
   static final AppDatabase instance = AppDatabase._();
 
   static const _dbName = 'ah_developer_kiryana_store.db';
-  static const _dbVersion = 40;
+  static const _dbVersion = 39;
 
   Database? _db;
 
@@ -116,11 +116,7 @@ class AppDatabase {
         dirty INTEGER NOT NULL DEFAULT 1,
         searchTag TEXT NOT NULL DEFAULT '',
         defaultUnitIndex INTEGER NOT NULL DEFAULT -1,
-        quickSaleDefaultUnitIndex INTEGER NOT NULL DEFAULT -1,
-        genericName TEXT NOT NULL DEFAULT '',
-        company TEXT NOT NULL DEFAULT '',
-        rackLocation TEXT NOT NULL DEFAULT '',
-        controlled INTEGER NOT NULL DEFAULT 0
+        quickSaleDefaultUnitIndex INTEGER NOT NULL DEFAULT -1
       )
     ''');
 
@@ -247,9 +243,7 @@ class AppDatabase {
         itemName TEXT NOT NULL DEFAULT '',
         retailRate REAL NOT NULL DEFAULT 0,
         wholesaleRate REAL NOT NULL DEFAULT 0,
-        shopkeeperRate REAL NOT NULL DEFAULT 0,
-        batchNo TEXT NOT NULL DEFAULT '',
-        expiry TEXT NOT NULL DEFAULT ''
+        shopkeeperRate REAL NOT NULL DEFAULT 0
       )
     ''');
 
@@ -360,21 +354,16 @@ class AppDatabase {
       )
     ''');
 
-    for (final sql in [..._zakatTablesSql, ..._shellTablesSql, ..._stockMovementsSql, ..._rentTablesSql, ..._workerTablesSql, ..._shopRentTablesSql, ..._utilityBillTablesSql, ..._dueFollowupTablesSql]) {
+    for (final sql in [..._zakatTablesSql, ..._shellTablesSql, ..._stockMovementsSql, ..._rentTablesSql, ..._workerTablesSql, ..._shopRentTablesSql, ..._utilityBillTablesSql, ..._dueFollowupTablesSql, ...bakeryTablesSql]) {
       batch.execute(sql);
     }
 
     // Seed defaults — mirrors the Kotlin app's first-run defaults.
     batch.execute(_recycleBinSql);
     batch.execute(ReturnUndoRepository.createSql);
-    batch.execute(RxRepository.createSql);
 
     batch.insert('categories', {'name': 'General'});
     batch.insert('units', {'name': 'pcs'});
-    // Hanna Pharmacy POS: dawai ki aam units (naye install par).
-    for (final u in const ['tablet', 'capsule', 'strip', 'pack', 'box', 'bottle', 'tube', 'vial', 'ampoule', 'sachet']) {
-      batch.insert('units', {'name': u});
-    }
 
     await batch.commit(noResult: true);
   }
@@ -603,17 +592,10 @@ class AppDatabase {
       await db.execute(ReturnUndoRepository.createSql);
     }
     if (oldVersion < 39) {
-      // v39 (Hanna Pharmacy POS): dawai ka formula / company / rack, aur purchase line ka batch + expiry.
-      await _addColumnIfMissing(db, 'products', 'genericName', "TEXT NOT NULL DEFAULT ''");
-      await _addColumnIfMissing(db, 'products', 'company', "TEXT NOT NULL DEFAULT ''");
-      await _addColumnIfMissing(db, 'products', 'rackLocation', "TEXT NOT NULL DEFAULT ''");
-      await _addColumnIfMissing(db, 'purchase_items', 'batchNo', "TEXT NOT NULL DEFAULT ''");
-      await _addColumnIfMissing(db, 'purchase_items', 'expiry', "TEXT NOT NULL DEFAULT ''");
-    }
-    if (oldVersion < 40) {
-      // v40 (Hanna Pharmacy POS): Controlled (Rx) dawai ka nishan + parchi (prescription) register.
-      await _addColumnIfMissing(db, 'products', 'controlled', 'INTEGER NOT NULL DEFAULT 0');
-      await db.execute(RxRepository.createSql);
+      // v39: Bakery — cake / custom orders, recipes, production log (local only).
+      for (final sql in bakeryTablesSql) {
+        await db.execute(sql);
+      }
     }
     // products.searchTag was added to _onCreate WITHOUT a migration step, so a database created by the
     // earliest builds (schema v1) never got the column. Found by the real-file migration test

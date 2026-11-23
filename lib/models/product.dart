@@ -46,15 +46,6 @@ class Product {
   /// Mirrors Product.quickSaleDefaultUnitIndex in Database.kt.
   final int quickSaleDefaultUnitIndex;
 
-  /// Hanna Pharmacy POS (DB v39): dawai ka formula/salt, company, aur rack/shelf. Sab optional.
-  /// genericName + company bhi [matchesQuery] mein hain; same genericName = substitute dawai.
-  final String genericName;
-  final String company;
-  final String rackLocation;
-
-  /// Hanna Pharmacy POS (DB v40): Controlled / parchi wali dawai — sale par patient + doctor + parchi poocha jata hai.
-  final bool controlled;
-
   const Product({
     required this.barcode,
     required this.name,
@@ -84,17 +75,9 @@ class Product {
     this.searchTag = '',
     this.defaultUnitIndex = -1,
     this.quickSaleDefaultUnitIndex = -1,
-    this.genericName = '',
-    this.company = '',
-    this.rackLocation = '',
-    this.controlled = false,
   });
 
   Product copyWith({
-    String? genericName,
-    String? company,
-    String? rackLocation,
-    bool? controlled,
     String? searchTag,
     int? defaultUnitIndex,
     int? quickSaleDefaultUnitIndex,
@@ -153,10 +136,6 @@ class Product {
         searchTag: searchTag ?? this.searchTag,
         defaultUnitIndex: defaultUnitIndex ?? this.defaultUnitIndex,
         quickSaleDefaultUnitIndex: quickSaleDefaultUnitIndex ?? this.quickSaleDefaultUnitIndex,
-        genericName: genericName ?? this.genericName,
-        company: company ?? this.company,
-        rackLocation: rackLocation ?? this.rackLocation,
-        controlled: controlled ?? this.controlled,
     );
   }
 
@@ -189,10 +168,6 @@ class Product {
         'searchTag': searchTag,
         'defaultUnitIndex': defaultUnitIndex,
         'quickSaleDefaultUnitIndex': quickSaleDefaultUnitIndex,
-        'genericName': genericName,
-        'company': company,
-        'rackLocation': rackLocation,
-        'controlled': controlled ? 1 : 0,
       };
 
   factory Product.fromMap(Map<String, Object?> m) => Product(
@@ -224,10 +199,6 @@ class Product {
         searchTag: (m['searchTag'] as String?) ?? '',
         defaultUnitIndex: (m['defaultUnitIndex'] as num?)?.toInt() ?? -1,
         quickSaleDefaultUnitIndex: (m['quickSaleDefaultUnitIndex'] as num?)?.toInt() ?? -1,
-        genericName: (m['genericName'] as String?) ?? '',
-        company: (m['company'] as String?) ?? '',
-        rackLocation: (m['rackLocation'] as String?) ?? '',
-        controlled: (m['controlled'] as num?)?.toInt() == 1,
       );
 }
 
@@ -452,7 +423,7 @@ extension ProductSearch on Product {
   bool matchesQuery(String query) {
     final q = query.trim();
     if (q.isEmpty) return true;
-    final haystack = '$name $searchTag $genericName $company'.toLowerCase();
+    final haystack = '$name $searchTag'.toLowerCase();
     final terms = q.toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty);
     return terms.every(haystack.contains);
   }

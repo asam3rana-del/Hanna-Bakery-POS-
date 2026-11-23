@@ -40,19 +40,17 @@ void main() {
     expect(Permissions.can('stock_taking'), isTrue);
   });
 
-  test('Expense and Shell Ledger: open to cashier by default, admin can still deny', () {
+  test('Expense: open to cashier by default, admin can still deny', () {
     expect(Permissions.defaultFor('cashier', 'expense'), isTrue);
-    expect(Permissions.defaultFor('cashier', 'shell_ledger'), isTrue);
     Session.role = 'cashier';
     Session.permissions = Permissions.encode({'expense': false});
     expect(Permissions.can('expense'), isFalse);
-    expect(Permissions.can('shell_ledger'), isTrue);
   });
 
   test('admin can never be locked out', () {
     Session.role = 'admin';
-    Session.permissions = Permissions.encode({'zakat': false});
-    expect(Permissions.can('zakat'), isTrue);
+    Session.permissions = Permissions.encode({'balance_sheet': false});
+    expect(Permissions.can('balance_sheet'), isTrue);
   });
 
   test('bad or empty permission text means no overrides', () {

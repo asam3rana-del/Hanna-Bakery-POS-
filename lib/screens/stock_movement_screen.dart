@@ -271,6 +271,10 @@ class _StockMovementBodyState extends State<_StockMovementBody> {
         return (Loc.t('SALE ITEM DELETED', 'سیل آئٹم حذف'), p.red);
       case MovementType.openingStock:
         return (Loc.t('OPENING STOCK', 'ابتدائی اسٹاک'), p.flatPurpleFg);
+      case MovementType.production:
+        return (Loc.t('PRODUCTION (BAKED)', 'پروڈکشن (تیار)'), p.flatTealFg);
+      case MovementType.productionUse:
+        return (Loc.t('USED IN PRODUCTION', 'پروڈکشن میں استعمال'), p.flatAmberFg);
       case MovementType.damage:
         return (Loc.t('DAMAGE / LOSS', 'نقصان'), p.red);
       case MovementType.adjustment:

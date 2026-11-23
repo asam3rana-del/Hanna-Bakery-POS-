@@ -36,7 +36,6 @@ class Permissions {
     PermDef('rate_comparison', groupReports, 'Rate Comparison', 'ریٹ کا موازنہ', _am),
     PermDef('party_reports', groupReports, 'Party Reports', 'پارٹی رپورٹس', _am),
     PermDef('payments_report', groupReports, 'Payments Report', 'ادائیگیوں کی رپورٹ', _am),
-    PermDef('due_reminders', groupReports, 'Due Date Reminders', 'ادائیگی کی یاد دہانی', _am),
     PermDef('stock_report', groupReports, 'Stock Report', 'اسٹاک رپورٹ', _am),
     PermDef('stock_history', groupReports, 'Stock History', 'اسٹاک کی تاریخ', _am),
     PermDef('cost_history', groupReports, 'Cost History', 'لاگت کی تاریخ', _am),
@@ -47,15 +46,13 @@ class Permissions {
     PermDef('stock_taking', groupTools, 'Stock Taking', 'اسٹاک گنتی', _am),
     PermDef('fix_bill_cost', groupTools, 'Fix Bill Cost', 'بل کی لاگت درست کریں', _a),
     PermDef('cash_register', groupTools, 'Cash Register', 'کیش رجسٹر', _am),
-    PermDef('zakat', groupTools, 'Zakat', 'زکوٰۃ', _am),
     PermDef('expense', groupTools, 'Expense', 'اخراجات', _all),
-    PermDef('shell_ledger', groupTools, 'Shell Ledger', 'شیل لیجر', _all),
   ];
 
   /// Reports hub ki rows (Reports page khulne ke liye inmein se koi ek chahiye).
   static const List<String> reportKeys = [
     'reports_summary', 'sale_history', 'purchase_history', 'daily_bills', 'monthly', 'rate_comparison',
-    'party_reports', 'payments_report', 'due_reminders', 'stock_report', 'stock_history', 'cost_history',
+    'party_reports', 'payments_report', 'stock_report', 'stock_history', 'cost_history',
     'stock_audit', 'inventory_insights', 'balance_sheet',
   ];
 

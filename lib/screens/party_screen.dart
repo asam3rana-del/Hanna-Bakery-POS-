@@ -1,15 +1,12 @@
 import 'dart:async';
-import '../app_info.dart';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../db/customer_repository.dart';
-import '../db/due_followup_repository.dart';
 import '../db/party_repository.dart';
 import '../db/supplier_repository.dart';
-import '../models/due_followup.dart';
 import '../models/party.dart';
 import '../services/contact_picker.dart';
 import '../services/session.dart';
@@ -18,8 +15,6 @@ import '../utils/input_validation.dart';
 import '../utils/loc.dart';
 import '../widgets/party_avatar.dart';
 import 'edit_party_dialog.dart';
-import 'followup_sheets.dart';
-import 'qist_sheet.dart';
 
 /// Mirrors PartyActivity.kt — "Customers & Suppliers": add / edit / delete, search, "Dues only",
 /// tap-for-history, call, plus the maintenance chips (Fix Balances, Merge Duplicates, Cleanup
@@ -248,31 +243,9 @@ class _PartyScreenState extends State<PartyScreen> with WidgetsBindingObserver {
     }
   }
 
-  /// Customer ko call: dialer khulte hi "call" ki entry (Rabta history / Collection mein) ban jati hai, aur
-  /// nateeja likhne ki sheet khul jati hai — call se wapas aate hi wohi samne hoti hai (baat hui / nahi uthaya /
-  /// wada + tareekh). Sheet band kar dein to entry "sent" rehti hai (koshish to hui).
+  /// Customer ko call (dialer).
   Future<void> _callCustomer(Customer c, double closing) async {
-    final id = c.id;
-    if (!await _dial(c.phone) || id == null || !mounted) return;
-    try {
-      final entryId = await DueFollowUpRepository.instance
-          .add(partyId: id, partyName: c.name, method: FollowUpMethod.call, outcome: FollowUpOutcome.sent);
-      final entry = await DueFollowUpRepository.instance.byId(entryId);
-      if (!mounted) return;
-      await showFollowUpSheet(context,
-          partyId: id,
-          partyName: c.name,
-          existing: entry,
-          method: FollowUpMethod.call,
-          suggestedAmount: closing > 0 ? closing : 0);
-    } catch (_) {}
-  }
-
-  /// Customer ki poori rabta history (call / WhatsApp / wade / nateeje), naya pehle.
-  Future<void> _showRabta(Customer c, double closing) async {
-    final id = c.id;
-    if (id == null) return;
-    await showFollowUpTimeline(context, partyId: id, partyName: c.name, totalDue: closing > 0 ? closing : 0);
+    await _dial(c.phone);
   }
 
   // ------------------------------------------------------------------ edit dialogs
@@ -684,15 +657,6 @@ class _PartyScreenState extends State<PartyScreen> with WidgetsBindingObserver {
           partyId: c.id,
           onCall: () => _callCustomer(
               c, partyClosing(opening: c.openingBalance, running: _customerBalances[c.id] ?? 0.0, stuck: c.stuckBalance)),
-          onRabta: AppInfo.pharmacyMode ? null : () => _showRabta(
-              c, partyClosing(opening: c.openingBalance, running: _customerBalances[c.id] ?? 0.0, stuck: c.stuckBalance)),
-          onQist: AppInfo.pharmacyMode || c.id == null
-              ? null
-              : () => showQistSheet(context,
-                  customerId: c.id!,
-                  name: c.name,
-                  due: partyClosing(
-                      opening: c.openingBalance, running: _customerBalances[c.id] ?? 0.0, stuck: c.stuckBalance)),
           onTap: () => _showCustomerHistory(c),
           onEdit: () => _editCustomer(c),
           onDelete: () => _deleteCustomer(c),

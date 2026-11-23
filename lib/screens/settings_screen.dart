@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
-import '../app_info.dart';
 
 import '../db/app_database.dart';
 import '../db/user_repository.dart';
+import '../desktop/desktop_prefs.dart';
+import '../desktop/desktop_shell.dart' show showDesktopShortcuts;
 import '../models/misc_entities.dart';
 import '../services/credit_guard.dart';
 import '../services/demo_mode.dart';
@@ -27,6 +28,10 @@ import '../widgets/sync_section.dart';
 import '../sync/sync_repository.dart';
 import 'about_screen.dart';
 import 'backup_export_screen.dart';
+import 'bakery_orders_screen.dart';
+import 'production_screen.dart';
+import 'wastage_screen.dart';
+import '../license/license_screen.dart';
 import 'cash_screen.dart';
 import 'expense_screen.dart';
 import 'items_screen.dart';
@@ -37,12 +42,8 @@ import 'recycle_bin_screen.dart';
 import 'reports_screen.dart';
 import 'sale_screen.dart';
 import 'setup_guide_screen.dart';
-import 'shell_ledger_screen.dart';
-import 'shop_rent_screen.dart';
 import 'user_management_screen.dart';
-import 'utility_bills_screen.dart';
 import 'workers_screen.dart';
-import 'zakat_screen.dart';
 import '../services/permissions.dart';
 import '../widgets/permission_guard.dart';
 
@@ -403,8 +404,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       const SizedBox(width: 8),
       Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16))),
     ]);
-    // Hanna Pharmacy POS: har card band rehta hai, title par tap se khulta hai (Settings chhoti aur saaf).
-    if (collapsible || AppInfo.pharmacyMode) {
+    if (collapsible) {
       return Card(
         margin: const EdgeInsets.only(bottom: 14),
         clipBehavior: Clip.antiAlias,
@@ -447,6 +447,53 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       );
 
+  /// Sirf PC (Windows): text size, sidebar, keyboard shortcuts. Har user ka apna (is computer par).
+  Widget _desktopCard() {
+    return _card(Loc.t('Computer (PC)', 'کمپیوٹر (PC)'), Icons.desktop_windows_outlined, [
+      Text(Loc.t('Text size', 'ٹیکسٹ کا سائز'), style: const TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 6),
+      ValueListenableBuilder<double>(
+        valueListenable: DesktopPrefs.textScale,
+        builder: (_, scale, __) => Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final v in DesktopPrefs.textScales)
+            ChoiceChip(
+              label: Text(DesktopPrefs.scaleLabel(v)),
+              selected: v == scale,
+              onSelected: (_) => DesktopPrefs.setTextScale(v),
+            ),
+        ]),
+      ),
+      const SizedBox(height: 4),
+      Text(Loc.t('Shortcut: Ctrl + / Ctrl − / Ctrl 0', 'شارٹ کٹ: Ctrl + / Ctrl − / Ctrl 0'),
+          style: TextStyle(fontSize: 12, color: ThemeManager.palette.textMuted)),
+      const SizedBox(height: 8),
+      ValueListenableBuilder<bool>(
+        valueListenable: DesktopPrefs.sidebarCollapsed,
+        builder: (_, collapsed, __) => SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: collapsed,
+          onChanged: DesktopPrefs.setSidebarCollapsed,
+          title: Text(Loc.t('Small side menu (icons only)', 'چھوٹا سائیڈ مینیو (صرف آئیکن)')),
+          subtitle: Text(Loc.t('More room for bills and reports', 'بل اور رپورٹ کے لیے زیادہ جگہ')),
+        ),
+      ),
+      const SizedBox(height: 4),
+      OutlinedButton.icon(
+        onPressed: showDesktopShortcuts,
+        icon: const Icon(Icons.keyboard_outlined),
+        label: Text(Loc.t('KEYBOARD SHORTCUTS (F1)', 'کی بورڈ شارٹ کٹس (F1)')),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        Loc.t(
+            'Printer: use "Printer Setup" above for a USB (installed in Windows) or network thermal printer.',
+            'پرنٹر: اوپر "پرنٹر سیٹ اپ" سے USB (ونڈوز میں انسٹال) یا نیٹ ورک تھرمل پرنٹر چنیں۔'),
+        style: TextStyle(fontSize: 12, color: ThemeManager.palette.textMuted),
+      ),
+    ]);
+  }
+
   void _open(Widget screen) => Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
 
   /// Kotlin SettingsActivity ke upar wali link rows (Parties, Items, Reports, Sale, Purchase, Expense,
@@ -466,6 +513,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       row(Icons.list_alt, 'Items', 'آئٹمز', const ItemsScreen()),
       if (Permissions.canAnyReport()) row(Icons.trending_up, 'Reports', 'رپورٹس', const ReportsScreen()),
       row(Icons.receipt_outlined, 'Sale', 'سیل', const SaleScreen()),
+      row(Icons.cake_outlined, 'Cake Orders', 'کیک آرڈرز', const BakeryOrdersScreen(), color: p.flatPinkFg),
+      if (Session.isAdminOrManager)
+        row(Icons.bakery_dining_outlined, 'Production & Recipes', 'پروڈکشن اور ریسپیز', const ProductionScreen(),
+            color: p.flatAmberFg),
+      if (Session.isAdminOrManager)
+        row(Icons.delete_sweep_outlined, 'Wastage', 'ویسٹیج', const WastageScreen(), color: p.red),
       if (Session.isAdmin)
         row(Icons.shopping_cart_outlined, 'Purchase', 'خریداری',
             const RoleGuard(allowed: {'admin'}, child: PurchaseScreen())),
@@ -473,23 +526,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         row(Icons.business_center_outlined, 'Expense', 'اخراجات',
             const PermissionGuard(permission: 'expense', child: ExpenseScreen()), color: p.navyInk),
       if (Session.isAdminOrManager)
-        row(Icons.storefront_outlined, 'Shop Rents', 'دکانوں کا کرایہ',
-            const RoleGuard(allowed: {'admin', 'manager'}, child: ShopRentScreen()), color: p.navyInk),
-      if (Session.isAdminOrManager)
         row(Icons.badge_outlined, 'Workers', 'ورکرز',
             const RoleGuard(allowed: {'admin', 'manager'}, child: WorkersScreen()), color: p.navyInk),
-      if (Session.isAdminOrManager)
-        row(Icons.receipt_long_outlined, 'Utility Bills', 'یوٹیلیٹی بلز',
-            const RoleGuard(allowed: {'admin', 'manager'}, child: UtilityBillsScreen()), color: p.navyInk),
       if (Permissions.can('cash_register'))
         row(Icons.account_balance_outlined, 'Cash & Bank', 'کیش اور بینک',
             const PermissionGuard(permission: 'cash_register', child: CashScreen()), color: p.navyInk),
-      if (!AppInfo.pharmacyMode && Permissions.can('zakat'))
-        row(Icons.volunteer_activism_outlined, 'Zakat', 'زکوٰۃ',
-            const PermissionGuard(permission: 'zakat', child: ZakatScreen()), color: p.navyInk),
-      if (!AppInfo.pharmacyMode && Permissions.can('shell_ledger'))
-        row(Icons.inventory_2_outlined, 'Shell Ledger', 'شیل لیجر',
-            const PermissionGuard(permission: 'shell_ledger', child: ShellLedgerScreen()), color: p.navyInk),
     ];
   }
 
@@ -500,7 +541,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       backgroundColor: ThemeManager.palette.bg,
       appBar: AppBar(backgroundColor: ThemeManager.palette.navy, foregroundColor: Colors.white, title: Text(Loc.t('Settings', 'سیٹنگز'))),
       body: ListView(padding: const EdgeInsets.all(16), children: [
-        PremiumHeader(title: _headerShop, subtitle: Loc.t('POINT OF SALE', 'پوائنٹ آف سیل')),
+        PremiumHeader(title: _headerShop, subtitle: Loc.t('BAKERY POINT OF SALE', 'بیکری پوائنٹ آف سیل')),
         ..._linkRows(),
         const SizedBox(height: 6),
         if (admin)
@@ -517,7 +558,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 maxLines: 5,
                 decoration: InputDecoration(
                   labelText: Loc.t('Payment details for reminders', 'یاد دہانی میں ادائیگی کی تفصیل'),
-                  hintText: 'Raast ID: 03001234567\nJazzCash: 03001234567 (Owner)\nBank: Meezan PK00MEZN0000000000000000',
+                  hintText: 'Raast ID: 03001234567\nJazzCash: 03001234567 (Asam)\nBank: Meezan PK00MEZN0000000000000000',
                   helperText: Loc.t('Added under every WhatsApp due reminder', 'ہر واٹس ایپ یاد دہانی کے نیچے لگے گا'),
                   filled: true,
                   fillColor: ThemeManager.palette.fieldFill,
@@ -576,8 +617,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: Text(Loc.t('Needs Cloud Sync Setup; staff phone in Manage Users', 'Cloud Sync Setup ضروری؛ اسٹاف کا فون Manage Users میں')),
             ),
           ], collapsible: true),
-        // Pharmacy: technical / credit-limit wale cards nazar nahi aate (setting jo pehle thi wahi chalti hai).
-        if (!AppInfo.pharmacyMode)
         _card(Loc.t('Secure Cloud Login (staff)', 'سیکیور کلاؤڈ لاگ اِن (اسٹاف)'), Icons.verified_user, [
           FutureBuilder<bool>(
             future: StaffAuth.isEnabled(),
@@ -596,7 +635,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ]),
-        if (!AppInfo.pharmacyMode)
         _card(Loc.t('Credit limit override', 'کریڈٹ لیمٹ اجازت'), Icons.lock, [
           FutureBuilder<bool>(
             future: CreditOverridePolicy.managersOnly(),
@@ -615,7 +653,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
         ]),
-        if (!AppInfo.pharmacyMode)
         _card(Loc.t('Server credit-limit check', 'سرور کریڈٹ لیمٹ چیک'), Icons.shield, [
           FutureBuilder<bool>(
             future: const CreditGuard().isEnabled(),
@@ -705,6 +742,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ]),
         const SyncSection(),
+        if (DesktopPrefs.isDesktop) _desktopCard(),
         _card(Loc.t('Appearance', 'ظاہری شکل'), Icons.dark_mode, [
           ValueListenableBuilder<bool>(
             valueListenable: ThemeManager.isDark,
@@ -740,6 +778,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text(Loc.t('MANAGE USERS', 'یوزرز مینیج کریں')),
             ),
           ]),
+        _card(Loc.t('License', 'لائسنس'), Icons.verified_user_outlined, [
+          Text(Loc.t('License status, device ID and activation', 'لائسنس کی حالت، ڈیوائس آئی ڈی اور ایکٹیویشن')),
+          const SizedBox(height: 10),
+          OutlinedButton(
+            onPressed: () => _open(const LicenseScreen()),
+            child: Text(Loc.t('OPEN LICENSE', 'لائسنس کھولیں')),
+          ),
+        ]),
         _card(Loc.t('About & Privacy', 'ایپ اور پرائیویسی'), Icons.info_outline, [
           Text(Loc.t('Privacy policy, support, delete my data', 'پرائیویسی پالیسی، سپورٹ، ڈیٹا ختم کروانا')),
           const SizedBox(height: 10),

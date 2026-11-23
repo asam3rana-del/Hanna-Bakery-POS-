@@ -83,6 +83,8 @@ class MovementType {
   static const stockTake = 'STOCK_TAKE';
   static const auditReconcile = 'AUDIT_RECONCILE';
   static const returnUndo = 'RETURN_UNDO';
+  static const production = 'PRODUCTION'; // bakery: tayyar maal (+)
+  static const productionUse = 'PRODUCTION_USE'; // bakery: kacha maal istemal (-)
 
   /// Cost History sirf wo types jo Product.cost hila sakti hain (sale kabhi cost nahi badalti).
   /// Kotlin StockMovementDao.costHistoryForProduct().

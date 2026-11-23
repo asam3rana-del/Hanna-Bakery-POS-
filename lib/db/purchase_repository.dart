@@ -38,10 +38,6 @@ class PurchaseLine {
   final double wholesaleRate;
   final double shopkeeperRate;
 
-  /// Hanna Pharmacy POS: batch number aur expiry ("yyyy-MM"; '' = nahi likha).
-  final String batchNo;
-  final String expiry;
-
   const PurchaseLine({
     required this.itemName,
     required this.barcode,
@@ -52,8 +48,6 @@ class PurchaseLine {
     this.retailRate = 0.0,
     this.wholesaleRate = 0.0,
     this.shopkeeperRate = 0.0,
-    this.batchNo = '',
-    this.expiry = '',
   });
 }
 
@@ -236,8 +230,6 @@ class PurchaseRepository {
         retailRate: pi.retailRate,
         wholesaleRate: pi.wholesaleRate,
         shopkeeperRate: pi.shopkeeperRate,
-        batchNo: pi.batchNo,
-        expiry: pi.expiry,
       ));
     }
 
@@ -495,8 +487,6 @@ class PurchaseRepository {
             retailRate: line.retailRate,
             wholesaleRate: line.wholesaleRate,
             shopkeeperRate: line.shopkeeperRate,
-            batchNo: line.batchNo,
-            expiry: line.expiry,
           ).toMap(),
         );
       }

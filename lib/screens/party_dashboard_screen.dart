@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../app_info.dart';
 import 'package:flutter/services.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:intl/intl.dart';
@@ -13,7 +12,6 @@ import '../widgets/party_quick_add_menu.dart';
 import '../widgets/permission_guard.dart';
 import '../widgets/role_guard.dart';
 import '../db/due_reminders_repository.dart' show PartyDueStatus;
-import 'amanat_loan_screen.dart';
 import 'cash_screen.dart';
 import 'item_search_screen.dart';
 import 'login_screen.dart';
@@ -499,10 +497,6 @@ class _PartyDashboardScreenState extends State<PartyDashboardScreen> {
                 sliver: SliverToBoxAdapter(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
                     _summaryCards(p),
-                    if (!AppInfo.pharmacyMode && Session.isAdminOrManager) ...[
-                      const SizedBox(height: 12),
-                      _amanatTile(p),
-                    ],
                     const SizedBox(height: 16),
                     _tabs(p),
                     const SizedBox(height: 14),
@@ -530,12 +524,6 @@ class _PartyDashboardScreenState extends State<PartyDashboardScreen> {
         Expanded(
           child: Text(Loc.t('Dashboard', 'ڈیش بورڈ'),
               style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.bold)),
-        ),
-        if (!AppInfo.pharmacyMode)
-        IconButton(
-          tooltip: Loc.t('Deposit / Loan', 'امانت / قرض'),
-          icon: const Icon(Icons.savings_outlined, color: Colors.white),
-          onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AmanatLoanScreen())),
         ),
         IconButton(
           icon: const Icon(Icons.notifications_none, color: Colors.white),
@@ -571,27 +559,6 @@ class _PartyDashboardScreenState extends State<PartyDashboardScreen> {
             onTap: () => _toggleSummaryFilter(PartyFilter.payable)),
       ),
     ]);
-  }
-
-  /// Dashboard par seedha Amanat / Loan screen ka button (add, edit, delete wahin).
-  Widget _amanatTile(AppPalette p) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AmanatLoanScreen())),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 13, 12, 13),
-        decoration: _cardDeco(p),
-        child: Row(children: [
-          Icon(Icons.savings_outlined, size: 22, color: p.flatPurpleFg),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(Loc.t('Deposit / Loan', 'امانت / قرض'),
-                style: TextStyle(fontSize: 14.5, fontWeight: FontWeight.bold, color: p.textDark)),
-          ),
-          Icon(Icons.chevron_right, color: p.textMuted),
-        ]),
-      ),
-    );
   }
 
   Widget _summaryCard(

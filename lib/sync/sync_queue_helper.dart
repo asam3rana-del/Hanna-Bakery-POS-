@@ -3,7 +3,6 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
-import '../db/rx_repository.dart' show rxSyncFor;
 import 'branch_config_store.dart';
 import 'device_tag.dart';
 
@@ -226,12 +225,6 @@ class SyncQueueHelper {
         'defaultUnitIndex': p['defaultUnitIndex'],
         'quickSaleDefaultUnitIndex': p['quickSaleDefaultUnitIndex'],
         'searchTag': p['searchTag'],
-        // Hanna Pharmacy POS (Kotlin app jaise hi field naam)
-        // (sirf jab local row mein column ho — purana schema/test table ho to field bheji hi nahi jati)
-        if (p.containsKey('genericName')) 'genericName': p['genericName'] ?? '',
-        if (p.containsKey('company')) 'company': p['company'] ?? '',
-        if (p.containsKey('rackLocation')) 'rackLocation': p['rackLocation'] ?? '',
-        if (p.containsKey('controlled')) 'controlled': p['controlled'] ?? 0,
         // "stock" / "openingStock" jaan boojh kar nahi — sirf increment_stock se.
       });
 
@@ -500,9 +493,6 @@ class SyncQueueHelper {
           'retailRate': it['retailRate'],
           'wholesaleRate': it['wholesaleRate'],
           'shopkeeperRate': it['shopkeeperRate'] ?? 0,
-          // Hanna Pharmacy POS: batch + expiry
-          if (it.containsKey('batchNo')) 'batchNo': it['batchNo'] ?? '',
-          if (it.containsKey('expiry')) 'expiry': it['expiry'] ?? '',
         }
     ];
     return _stamp({
@@ -629,11 +619,8 @@ class SyncQueueHelper {
       final stored = sale['customerServerId'];
       if (stored is String && stored.trim().isNotEmpty) custSid = stored;
     }
-    final payload = salePayload(sale, [for (final i in items) Map<String, Object?>.from(i)], custSid);
-    // Hanna Pharmacy POS: parchi (Rx) record bill ke saath hi cloud par.
-    final rx = await rxSyncFor(ex, invoice);
-    if (rx != null) payload['rx'] = rx;
-    await enqueue(ex, 'sale', saleEntityId(invoice), 'upsert', payload);
+    await enqueue(ex, 'sale', saleEntityId(invoice), 'upsert',
+        salePayload(sale, [for (final i in items) Map<String, Object?>.from(i)], custSid));
   }
 
   static Future<void> enqueuePurchase(DatabaseExecutor ex, String billNo) async {

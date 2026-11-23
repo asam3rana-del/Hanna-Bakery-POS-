@@ -1,5 +1,4 @@
 import 'dart:async';
-import '../app_info.dart';
 
 import 'package:flutter/material.dart';
 
@@ -301,14 +300,12 @@ class _ItemsScreenState extends State<ItemsScreen> {
             if (_admin) ...[
               _pill(Loc.t('Rate List', 'ریٹ لسٹ'), Icons.description_outlined,
                   () => _push(const RoleGuard(allowed: {'admin'}, child: BulkMissingRatesScreen()))),
-              if (!AppInfo.pharmacyMode)
-                _pill(Loc.t('Shop Rate', 'دکاندار ریٹ'), Icons.storefront_outlined,
-                    () => _push(const RoleGuard(allowed: {'admin'}, child: ShopRateScreen()))),
+              _pill(Loc.t('Shop Rate', 'دکاندار ریٹ'), Icons.storefront_outlined,
+                  () => _push(const RoleGuard(allowed: {'admin'}, child: ShopRateScreen()))),
               _pill(Loc.t('Bulk Rates', 'بلک ریٹ'), Icons.layers_outlined,
                   () => _push(const RoleGuard(allowed: {'admin'}, child: BulkRateToolScreen()))),
-              if (!AppInfo.pharmacyMode)
-                _pill(Loc.t('Translate', 'ترجمہ'), Icons.language,
-                    () => _push(const RoleGuard(allowed: {'admin'}, child: BulkTranslateScreen()))),
+              _pill(Loc.t('Translate', 'ترجمہ'), Icons.language,
+                  () => _push(const RoleGuard(allowed: {'admin'}, child: BulkTranslateScreen()))),
               _pill(Loc.t('Units', 'یونٹس'), Icons.straighten,
                   () => _push(const RoleGuard(allowed: {'admin'}, child: BulkDefaultUnitScreen()))),
             ],
@@ -316,13 +313,13 @@ class _ItemsScreenState extends State<ItemsScreen> {
               _pill(Loc.t('Stock Adjust', 'اسٹاک ایڈجسٹمنٹ'), Icons.tune, () => _push(const StockAdjustmentScreen())),
             if (Permissions.can('stock_taking'))
               _pill(Loc.t('Stock Taking', 'اسٹاک گنتی'), Icons.fact_check_outlined, () => _push(const StockTakingScreen())),
-            if (!AppInfo.pharmacyMode && Permissions.can('fix_bill_cost'))
+            if (Permissions.can('fix_bill_cost'))
               _pill(Loc.t('Cost Check', 'لاگت چیک'), Icons.price_check,
                   () => _push(const PermissionGuard(permission: 'fix_bill_cost', child: CostCheckScreen()))),
-            if (!AppInfo.pharmacyMode && Permissions.can('fix_bill_cost'))
+            if (Permissions.can('fix_bill_cost'))
               _pill(Loc.t('Fix Bill Cost', 'بل کی لاگت درست کریں'), Icons.build_outlined,
                   () => _push(const PermissionGuard(permission: 'fix_bill_cost', child: BillCostRepairScreen()))),
-            if (!AppInfo.pharmacyMode && Permissions.can('fix_bill_cost'))
+            if (Permissions.can('fix_bill_cost'))
               _pill(Loc.t('Pending Cost', 'باقی لاگت'), Icons.hourglass_bottom,
                   () => _push(const PermissionGuard(permission: 'fix_bill_cost', child: PendingCostScreen()))),
           ]),

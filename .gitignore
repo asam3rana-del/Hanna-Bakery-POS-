@@ -15,3 +15,7 @@ firebase/rules-tests/staff-claims.rules
 firebase/credit-check-test/node_modules/
 firebase/credit-check-test/fn/
 firebase/credit-check-test/firestore.rules
+
+# License: developer ki private key aur jaari kiye gaye license ka record — KABHI commit na karein
+*.key
+licenses_issued.csv

@@ -1,7 +1,5 @@
 import 'dart:async' show unawaited;
-import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
@@ -10,14 +8,16 @@ import 'backup/backup_scheduler.dart';
 import 'backup/offsite_backup.dart';
 import 'db/user_repository.dart';
 import 'db/desktop_db_init.dart';
+import 'desktop/desktop_prefs.dart';
+import 'desktop/desktop_shell.dart';
+import 'license/license_screen.dart';
+import 'license/license_service.dart';
 import 'screens/dashboard_screen.dart';
 import 'screens/login_screen.dart';
 import 'services/app_lock.dart';
 import 'services/crash_handler.dart';
 import 'services/demo_mode.dart';
-import 'services/bill_reminder_service.dart';
 import 'services/due_alert_service.dart';
-import 'services/return_alert_service.dart';
 import 'services/session.dart';
 import 'sync/branch_config_store.dart';
 import 'sync/device_tag.dart';
@@ -25,6 +25,7 @@ import 'sync/network_monitor.dart';
 import 'sync/settings_sync.dart';
 import 'sync/sync_keepalive.dart';
 import 'sync/sync_worker.dart';
+import 'theme/app_theme.dart';
 import 'theme/theme_manager.dart';
 import 'utils/loc.dart';
 
@@ -44,7 +45,10 @@ void main() async {
     await BranchConfigStore.init();
     await Loc.load();
     await ThemeManager.load();
+    await DesktopPrefs.load(); // PC: text size + sidebar (phone par kuch nahi)
     await Session.load();
+    // License / trial (offline). Na ho to app sirf License screen dikhati hai — data mehfooz.
+    await LicenseService.check();
     await _revalidateSession();
     // PosApplication.onCreate() mein AppLock.register(this) ke barabar.
     await AppLock.instance.register(loginBuilder: (_) => const LoginScreen());
@@ -70,12 +74,10 @@ void main() async {
   SyncWorker.instance.schedulePeriodic();
   // Android: minimize / back ke baad bhi sync na ruke (foreground service). Fail ho to app chalti rahe.
   unawaited(SyncKeepAlive.start());
-  // Roz ki due-reminder notification: app khulte hi check; tap par Due Reminders screen.
+  // Roz ki cake-order notification: app khulte hi check; tap par Cake Orders screen.
   try {
     await DueAlertService.init(withTap: true);
     unawaited(DueAlertService.checkAndNotify());
-    unawaited(BillReminderService.checkAndNotify());
-    unawaited(ReturnAlertService.checkAndNotify());
     unawaited(OffsiteBackup.checkAndNotify());
   } catch (_) {}
   runApp(const AhDeveloperApp());
@@ -107,18 +109,22 @@ class AhDeveloperApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: Listenable.merge([Loc.language, ThemeManager.isDark, DemoMode.notifier]),
+      listenable: Listenable.merge([Loc.language, ThemeManager.isDark, DemoMode.notifier, LicenseService.notifier]),
       builder: (context, _) {
         final lang = Loc.language.value;
         final dark = ThemeManager.isDark.value;
         final p = ThemeManager.palette;
         final demo = DemoMode.enabled;
+        final licensed = LicenseService.current.allowed;
         return MaterialApp(
           navigatorKey: AppLock.navigatorKey,
+          // PC sidebar ko pata rahe kaunsi screen / dialog upar hai.
+          navigatorObservers: [DesktopShell.observerFor('$lang-$dark-$demo-$licensed')],
           // zabaan / theme badalne par saari screens dobara ban jayein
           // Demo on/off par bhi poora tree naya (kisi screen mein doosri dukaan ka purana data na reh jaye).
-          key: ValueKey('$lang-$dark-$demo'),
-          title: demo ? 'Hanna Pharmacy POS (DEMO)' : 'Hanna Pharmacy POS',
+          // License activate / expire par bhi poori app nayi (gate screen <-> app).
+          key: ValueKey('$lang-$dark-$demo-$licensed'),
+          title: demo ? 'Hanna Bakery POS (DEMO)' : 'Hanna Bakery POS',
           debugShowCheckedModeBanner: false,
           theme: _buildTheme(p, dark),
           // Desktop: mouse se bhi drag-scroll (touch-screen POS jaisa).
@@ -127,8 +133,8 @@ class AhDeveloperApp extends StatelessWidget {
             textDirection: lang == 'ur' ? TextDirection.rtl : TextDirection.ltr,
             child: _BottomSystemBarGuard(
               background: p.bg,
-              child: _DesktopFrame(
-                background: p.bg,
+              // PC: sidebar + poori screen (phone / tablet par seedha child).
+              child: DesktopShell(
                 // Demo dukaan har screen par saaf nazar aaye, taake asal hisaab samajh kar entry na ho.
                 child: demo
                     ? Banner(
@@ -142,7 +148,9 @@ class AhDeveloperApp extends StatelessWidget {
             ),
           ),
           // Session hai to seedha dashboard, warna login/setup.
-          home: Session.isLoggedIn ? const DashboardScreen() : const LoginScreen(),
+          home: !licensed
+              ? const LicenseScreen(gate: true)
+              : (Session.isLoggedIn ? const DashboardScreen() : const LoginScreen()),
         );
       },
     );
@@ -153,52 +161,8 @@ class AhDeveloperApp extends StatelessWidget {
 /// aur unstyled Text bhi dark/light mein palette ke rang lete hain (pehle Material ke apne seeded rang the).
 /// Sirf stable ColorScheme/ThemeData fields — component themes (DialogTheme wagaira) jaan boojh kar nahi,
 /// kyunke naye Flutter versions mein unke class naam badal gaye hain.
-ThemeData _buildTheme(AppPalette p, bool dark) {
-  final brightness = dark ? Brightness.dark : Brightness.light;
-  final scheme = ColorScheme.fromSeed(seedColor: p.navy, brightness: brightness).copyWith(
-    surface: p.cardWhite,
-    onSurface: p.textDark,
-    onSurfaceVariant: p.textMuted,
-    surfaceContainerLowest: p.cardWhite,
-    surfaceContainerLow: p.cardWhite,
-    surfaceContainer: p.cardWhite,
-    surfaceContainerHigh: p.cardWhite,
-    surfaceContainerHighest: p.fieldFill,
-    outline: p.textMuted,
-    outlineVariant: p.border,
-    error: p.red,
-  );
-  final base = ThemeData(
-    useMaterial3: true,
-    colorScheme: scheme,
-    scaffoldBackgroundColor: p.bg,
-    canvasColor: p.cardWhite,
-    dividerColor: p.border,
-    fontFamily: 'Roboto',
-  );
-  return base.copyWith(textTheme: base.textTheme.apply(bodyColor: p.textDark, displayColor: p.textDark));
-}
-
-bool get _isDesktop => !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
-
-/// Screens mobile ke liye bani hain. Bari (desktop) window mein unhein khinchne ke bajaye beech mein
-/// aik hadd (900 px) tak chaura rakhte hain; phone / tablet par kuch nahi badalta.
-class _DesktopFrame extends StatelessWidget {
-  const _DesktopFrame({required this.child, required this.background});
-  final Widget child;
-  final Color background;
-
-  static const double maxWidth = 900;
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_isDesktop) return child;
-    return ColoredBox(
-      color: background,
-      child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: maxWidth), child: child)),
-    );
-  }
-}
+/// Poori app ka premium theme: lib/theme/app_theme.dart (Hanna navy + gold).
+ThemeData _buildTheme(AppPalette p, bool dark) => AppTheme.build(p, dark);
 
 /// Android 15+ (targetSdk 35/36) edge-to-edge zabardasti karta hai: neeche wali system bar (back/home)
 /// screen ke upar aa jaati hai, aur jin ListView par apni padding di hui hai unka aakhri button
