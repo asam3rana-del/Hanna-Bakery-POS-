@@ -22,6 +22,7 @@ import '../screens/sale_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/stock_report_screen.dart';
 import '../license/license_service.dart';
+import '../widgets/hanna_bakery_logo.dart';
 import '../services/app_lock.dart';
 import '../services/permissions.dart';
 import '../services/session.dart';
@@ -475,11 +476,10 @@ class _Sidebar extends StatelessWidget {
             child: Row(
               mainAxisAlignment: collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
               children: [
-                Container(
+                const SizedBox(
                   width: 38,
                   height: 38,
-                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
-                  child: const Icon(Icons.bakery_dining, color: _accent, size: 22),
+                  child: HannaBakeryLogo(size: 38),
                 ),
                 if (!collapsed) ...[
                   const SizedBox(width: 12),

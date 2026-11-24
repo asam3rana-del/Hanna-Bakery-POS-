@@ -16,6 +16,7 @@ import '../utils/loc.dart';
 import '../utils/password_hasher.dart';
 import 'dashboard_screen.dart';
 import '../theme/theme_manager.dart';
+import '../widgets/hanna_bakery_logo.dart';
 
 /// Mirrors LoginActivity.kt (password + "none" login method + pehli dafa admin setup).
 /// Login methods: password, none, fingerprint, both (local_auth), otp (Firebase Phone Auth — `lib/services/otp_login.dart`).
@@ -619,17 +620,7 @@ class _LoginScreenState extends State<LoginScreen> {
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 440),
                 child: Column(mainAxisSize: MainAxisSize.min, children: [
-                  Container(
-                    width: 86,
-                    height: 86,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.06),
-                      border: Border.all(color: ThemeManager.gold, width: 1.6),
-                      boxShadow: [BoxShadow(color: ThemeManager.gold.withValues(alpha: 0.25), blurRadius: 28)],
-                    ),
-                    child: const Icon(Icons.bakery_dining, size: 42, color: ThemeManager.gold),
-                  ),
+                  const HannaBakeryLogo(size: 88, glow: true),
                   const SizedBox(height: 18),
                   const Text('HANNA BAKERY',
                       style: TextStyle(color: ThemeManager.cream, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 4)),

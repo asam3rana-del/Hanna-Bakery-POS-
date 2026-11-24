@@ -5,10 +5,8 @@ import '../db/user_repository.dart';
 import '../desktop/desktop_prefs.dart';
 import '../desktop/desktop_shell.dart' show showDesktopShortcuts;
 import '../models/misc_entities.dart';
-import '../services/credit_guard.dart';
 import '../services/demo_mode.dart';
 import '../services/payment_info.dart';
-import '../services/credit_override_policy.dart';
 import '../services/staff_auth.dart';
 import '../services/app_lock.dart';
 import '../services/biometric.dart';
@@ -26,7 +24,6 @@ import '../widgets/premium_header.dart';
 import '../widgets/role_guard.dart';
 import '../widgets/sync_section.dart';
 import '../sync/sync_repository.dart';
-import 'about_screen.dart';
 import 'backup_export_screen.dart';
 import 'bakery_orders_screen.dart';
 import 'production_screen.dart';
@@ -549,23 +546,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _tf(_shopName, Loc.t('Shop Name', 'دکان کا نام')),
             _tf(_shopOwner, Loc.t('Owner Name', 'مالک کا نام')),
             _tf(_shopPhone, Loc.t('Phone', 'فون')),
-            _tf(_dueDays, Loc.t('Default credit period (days, 0 = off)', 'ڈیفالٹ ادھار مدت (دن، 0 = بند)'), number: true),
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: TextField(
-                controller: _paymentInfo,
-                minLines: 2,
-                maxLines: 5,
-                decoration: InputDecoration(
-                  labelText: Loc.t('Payment details for reminders', 'یاد دہانی میں ادائیگی کی تفصیل'),
-                  hintText: 'Raast ID: 03001234567\nJazzCash: 03001234567 (Asam)\nBank: Meezan PK00MEZN0000000000000000',
-                  helperText: Loc.t('Added under every WhatsApp due reminder', 'ہر واٹس ایپ یاد دہانی کے نیچے لگے گا'),
-                  filled: true,
-                  fillColor: ThemeManager.palette.fieldFill,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-            ),
             FilledButton(onPressed: _saveShop, child: Text(Loc.t('SAVE SETTINGS', 'محفوظ کریں'))),
             const SizedBox(height: 8),
             OutlinedButton.icon(
@@ -617,60 +597,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: Text(Loc.t('Needs Cloud Sync Setup; staff phone in Manage Users', 'Cloud Sync Setup ضروری؛ اسٹاف کا فون Manage Users میں')),
             ),
           ], collapsible: true),
-        _card(Loc.t('Secure Cloud Login (staff)', 'سیکیور کلاؤڈ لاگ اِن (اسٹاف)'), Icons.verified_user, [
-          FutureBuilder<bool>(
-            future: StaffAuth.isEnabled(),
-            builder: (context, snap) => SwitchListTile(
-              value: snap.data ?? false,
-              onChanged: !Session.isAdmin
-                  ? null
-                  : (v) async {
-                      await StaffAuth.setEnabled(v);
-                      if (mounted) setState(() {});
-                    },
-              title: Text(Loc.t('Sign in to cloud with staff account', 'اسٹاف اکاؤنٹ سے کلاؤڈ میں سائن اِن')),
-              subtitle: Text(Loc.t(
-                  'OFF = current behaviour. ON needs the staff backend + App Check set up (see docs/STAFF_AUTH_BACKEND_SETUP.md); sync never falls back to anonymous.',
-                  'آف = موجودہ طریقہ۔ آن کے لیے اسٹاف بیک اینڈ + App Check سیٹ اپ ضروری ہے؛ سنک کبھی anonymous پر واپس نہیں جاتا۔')),
-            ),
-          ),
-        ]),
-        _card(Loc.t('Credit limit override', 'کریڈٹ لیمٹ اجازت'), Icons.lock, [
-          FutureBuilder<bool>(
-            future: CreditOverridePolicy.managersOnly(),
-            builder: (context, snap) => SwitchListTile(
-              value: snap.data ?? false,
-              onChanged: Session.isAdmin
-                  ? (v) async {
-                      await CreditOverridePolicy.setManagersOnly(v);
-                      if (mounted) setState(() {});
-                    }
-                  : null,
-              title: Text(Loc.t('Only admin/manager can "Save Anyway"', 'صرف ایڈمن/منیجر "پھر بھی محفوظ کریں" کر سکتا ہے')),
-              subtitle: Text(Loc.t(
-                  'OFF = any user can save a bill over the credit limit after confirming (current behaviour). ON = cashier cannot. Only admin can change this.',
-                  'آف = کوئی بھی صارف تصدیق کے بعد لیمٹ سے اوپر بل محفوظ کر سکتا ہے (موجودہ طریقہ)۔ آن = کیشیئر نہیں کر سکتا۔ صرف ایڈمن بدل سکتا ہے۔')),
-            ),
-          ),
-        ]),
-        _card(Loc.t('Server credit-limit check', 'سرور کریڈٹ لیمٹ چیک'), Icons.shield, [
-          FutureBuilder<bool>(
-            future: const CreditGuard().isEnabled(),
-            builder: (context, snap) => SwitchListTile(
-              value: snap.data ?? false,
-              onChanged: !Session.isAdmin
-                  ? null
-                  : (v) async {
-                      await const CreditGuard().setEnabled(v);
-                      if (mounted) setState(() {});
-                    },
-              title: Text(Loc.t('Check credit limit with the server (online)', 'کریڈٹ لیمٹ سرور سے چیک کریں (آن لائن)')),
-              subtitle: Text(Loc.t(
-                  'OFF = current behaviour. ON needs the reserveCredit function deployed (docs/SERVER_CREDIT_CHECK.md). Offline sales still go through and use only the local check.',
-                  'آف = موجودہ طریقہ۔ آن کے لیے reserveCredit فنکشن ڈیپلائے ہونا ضروری ہے۔ آف لائن سیل پھر بھی ہوتی ہے اور صرف مقامی چیک چلتا ہے۔')),
-            ),
-          ),
-        ]),
         _card(Loc.t('My Login', 'میرا لاگ اِن'), Icons.person, [
           _tf(TextEditingController(text: Session.username ?? ''), Loc.t('Current Username', 'موجودہ یوزر نیم'), enabled: false),
           _tf(_newUsername, Loc.t('New Username', 'نیا یوزر نیم')),
@@ -778,22 +704,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               child: Text(Loc.t('MANAGE USERS', 'یوزرز مینیج کریں')),
             ),
           ]),
-        _card(Loc.t('License', 'لائسنس'), Icons.verified_user_outlined, [
-          Text(Loc.t('License status, device ID and activation', 'لائسنس کی حالت، ڈیوائس آئی ڈی اور ایکٹیویشن')),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () => _open(const LicenseScreen()),
-            child: Text(Loc.t('OPEN LICENSE', 'لائسنس کھولیں')),
-          ),
-        ]),
-        _card(Loc.t('About & Privacy', 'ایپ اور پرائیویسی'), Icons.info_outline, [
-          Text(Loc.t('Privacy policy, support, delete my data', 'پرائیویسی پالیسی، سپورٹ، ڈیٹا ختم کروانا')),
-          const SizedBox(height: 10),
-          OutlinedButton(
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutScreen())),
-            child: Text(Loc.t('OPEN ABOUT', 'کھولیں')),
-          ),
-        ]),
+        // License + About: Fitness jaisa premium patti (status rang, device ID, logo).
+        const LicenseAboutPanel(),
+        const SizedBox(height: 14),
         if (admin || DemoMode.enabled)
           _card(Loc.t('Demo / Training shop', 'ڈیمو / ٹریننگ دکان'), Icons.school_outlined, [
             Text(DemoMode.enabled

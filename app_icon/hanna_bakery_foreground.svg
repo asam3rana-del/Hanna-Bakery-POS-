@@ -1,0 +1,13 @@
+<svg width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="Hanna Bakery POS icon foreground" xmlns="http://www.w3.org/2000/svg">
+  <rect x="128" y="112" width="64" height="288" rx="32" fill="#F7F0E3"/>
+  <rect x="320" y="112" width="64" height="288" rx="32" fill="#F7F0E3"/>
+  <!-- candle + flame -->
+  <rect x="250" y="176" width="12" height="36" rx="6" fill="#F7F0E3"/>
+  <path d="M256 140 C268 154 270 164 264 172 C260 177 252 177 248 172 C242 164 244 154 256 140 Z" fill="#D4A24C"/>
+  <!-- top tier -->
+  <rect x="220" y="214" width="72" height="46" rx="12" fill="#D4A24C"/>
+  <!-- bottom tier -->
+  <rect x="200" y="266" width="112" height="60" rx="14" fill="#D4A24C"/>
+  <!-- cream drip line -->
+  <path d="M200 286 Q214 298 228 286 Q242 298 256 286 Q270 298 284 286 Q298 298 312 286" fill="none" stroke="#2A1A12" stroke-width="7" stroke-linecap="round"/>
+</svg>
